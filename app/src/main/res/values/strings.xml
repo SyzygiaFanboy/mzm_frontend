@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">睦头播放器</string>
+    <string name="navigation_drawer_open">打开侧边栏</string>
+    <string name="navigation_drawer_close">关闭侧边栏</string>
+</resources>

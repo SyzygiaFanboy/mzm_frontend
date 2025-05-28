@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 背景颜色 -->
+    <item android:drawable="@android:color/white"/>
+
+    <!-- Logo -->
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/launcher_foreground"/>
+    </item>
+
+
+</layer-list>
