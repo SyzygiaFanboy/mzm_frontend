@@ -2,17 +2,17 @@ package com.example.myapplication;
 import static android.content.ContentValues.TAG;
 
 import android.content.Context;
-import android.content.Intent;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
-import android.util.Log;
+
+import com.example.myapplication.model.Song;
+
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
-import java.io.File;
 import java.io.IOException;
 public class MusicPlayer {
     private MediaPlayer mediaPlayer;

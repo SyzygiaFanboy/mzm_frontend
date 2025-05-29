@@ -9,12 +9,17 @@ import android.os.Bundle;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.ListView;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
+
 import com.example.myapplication.MusicPlayer;
 import com.example.myapplication.MyApp;
+import com.example.myapplication.adapter.PlaylistAdapter;
+import com.example.myapplication.model.Playlist;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -27,8 +32,8 @@ import java.util.Set;
 import java.nio.file.*;
 
 public class PlaylistListActivity extends AppCompatActivity {
-    private List<String> playlists = new ArrayList<>();
-    private ArrayAdapter<String> adapter;
+    private List<Playlist> playlists = new ArrayList<>();
+    private PlaylistAdapter adapter;
     private static final String PREFS = "playlist_prefs";
     private static final String KEY_PLAYLISTS = "playlists";
 
@@ -37,23 +42,25 @@ public class PlaylistListActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_playlist_list);
+
         ListView listView = findViewById(R.id.lvPlaylists);
-        Button btnNew = findViewById(R.id.btnNewPlaylist);
-        Button btnDelete = findViewById(R.id.btnDeletePlaylist);
-        // 加载已有歌单（可从文件或数据库）
+        ImageButton btnNew = findViewById(R.id.btnNewPlaylist);
+        ImageButton btnDelete = findViewById(R.id.btnDeletePlaylist);
+
+        // 加载已有歌单
         loadPlaylists();
 
-        adapter = new ArrayAdapter<>(this,
-                android.R.layout.simple_list_item_single_choice,
-                playlists);
+        adapter = new PlaylistAdapter(this, playlists);
         listView.setAdapter(adapter);
+
 //关于短按长按可能需要修改
         // 短按：进入歌单
         listView.setOnItemClickListener((parent, view, position, id) -> {
             listView.clearChoices();
             adapter.notifyDataSetChanged();  // 刷新 UI，隐藏任何打勾
 
-            String selected = playlists.get(position);
+
+            String selected = playlists.get(position).getName();
             Intent intent = new Intent(this, MainActivity.class);
             intent.putExtra("playlist", selected);
             startActivity(intent);
@@ -69,7 +76,7 @@ public class PlaylistListActivity extends AppCompatActivity {
         btnDelete.setOnClickListener(v -> {
             int pos = listView.getCheckedItemPosition();
             if (pos >= 0 && pos < playlists.size()) {
-                String name = playlists.get(pos);
+                String name = playlists.get(pos).getName();
                 confirmAndDeletePlaylist(name, pos);
             }
         });
@@ -120,9 +127,6 @@ public class PlaylistListActivity extends AppCompatActivity {
     }
 
 
-
-
-
     private void showCreateDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         final EditText input = new EditText(this);
@@ -130,42 +134,34 @@ public class PlaylistListActivity extends AppCompatActivity {
                 .setView(input)
                 .setPositiveButton("确定", (dialog, which) -> {
                     String name = input.getText().toString();
-                    playlists.add(name);
+                    Playlist newPlaylist = new Playlist(name, 0, R.drawable.default_playlist_cover);
+                    playlists.add(newPlaylist);
                     adapter.notifyDataSetChanged();
-                    savePlaylist(name); // 保存到文件或数据库
+                    savePlaylist(); // 保存到文件或数据库
                 })
                 .setNegativeButton("取消", null)
                 .show();
     }
 
+    private void savePlaylist() {
+        // 读取 prefs
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        // 覆盖保存
+        String playlistsJson = Playlist.toJson(playlists);
+        prefs.edit().putString(KEY_PLAYLISTS, playlistsJson).apply();
+    }
+
     private void loadPlaylists() {
-        // 从 SharedPreferences 读取已有歌单
-        Set<String> set = getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getStringSet(KEY_PLAYLISTS, null);
-        if (set != null && !set.isEmpty()) {
-            playlists.addAll(set);
+        // 读取 SharedPreferences 已有歌单
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        String playlistsJson = prefs.getString(KEY_PLAYLISTS, null);
+        if (playlistsJson != null) {
+            playlists = Playlist.fromJson(playlistsJson);
         } else {
             // 第一次安装，初始化两个默认歌单
-            playlists.add("默认歌单");
-            playlists.add("我的收藏");
-            // 并保存到 prefs
-            getSharedPreferences(PREFS, MODE_PRIVATE)
-                    .edit()
-                    .putStringSet(KEY_PLAYLISTS, new HashSet<>(playlists))
-                    .apply();
+            playlists.add(new Playlist("默认歌单", 0, R.drawable.default_playlist_cover));
+            playlists.add(new Playlist("我的收藏", 0, R.drawable.default_playlist_cover));
+            savePlaylist(); // 保存到 prefs
         }
     }
-
-    private void savePlaylist(String name) {
-        // 先把当前 prefs 里已有的取出来
-        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        Set<String> set = new HashSet<>(
-                prefs.getStringSet(KEY_PLAYLISTS, Collections.emptySet())
-        );
-        // 加入新歌单
-        set.add(name);
-        // 写回 prefs
-        prefs.edit().putStringSet(KEY_PLAYLISTS, set).apply();
-    }
-
 }

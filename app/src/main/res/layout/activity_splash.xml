@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@android:color/white">
@@ -10,25 +9,25 @@
         android:id="@+id/splash_logo"
         android:layout_width="200dp"
         android:layout_height="200dp"
-        android:src="@drawable/launcher_foreground"
         android:layout_centerHorizontal="true"
         android:layout_centerVertical="true"
-        android:contentDescription="App Logo"/>
+        android:contentDescription="App Logo"
+        android:src="@drawable/launcher_foreground" />
 
     <!-- 文字 -->
     <TextView
         android:id="@+id/splash_text"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="睦头播放器"
-        android:textColor="@android:color/black"
-        android:textSize="24sp"
         android:layout_below="@id/splash_logo"
         android:layout_centerHorizontal="true"
         android:layout_marginTop="16dp"
         android:shadowColor="#000000"
-        android:shadowRadius="4"
         android:shadowDx="2"
-        android:shadowDy="2"/>
+        android:shadowDy="2"
+        android:shadowRadius="4"
+        android:text="睦头播放器"
+        android:textColor="@android:color/black"
+        android:textSize="24sp" />
 
 </RelativeLayout>
