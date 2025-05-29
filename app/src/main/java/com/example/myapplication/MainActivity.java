@@ -1,5 +1,7 @@
 package com.example.myapplication;
 
+import static android.content.ContentValues.TAG;
+
 import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.content.Intent;
@@ -700,21 +702,20 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
     }
 
     private void updatePersistentStorage() {
-        // 获取文件路径
         File file = MusicLoader.getMusicFile(this);
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(file, false))) {
-            // 遍历 musicList 重写文件，每一行格式为：时长,歌曲名
             for (Map<String, Object> item : musicList) {
-                // 从 map 中取出歌曲信息
+                String playlist = (String) item.get("playlist"); // 获取歌单名
                 String name = (String) item.get("name");
-                // 解析 TimeDuration 字符串还原为原始秒数（你可以在 Song 类中添加辅助方法）
-                int duration = Song.parseTime((String) item.get("TimeDuration"));
-                String line = duration + "," + name;
+                String formattedTime = (String) item.get("TimeDuration");
+                String filePath = (String) item.get("filePath");
+                int duration = Song.parseTime(formattedTime);
+                String line = playlist + "," + duration + "," + name + "," + filePath;
                 writer.write(line);
                 writer.newLine();
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            Log.e(TAG, "更新存储失败", e);
         }
     }
 
@@ -1022,9 +1023,9 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
 //            musicList.get(i).put("index", i + 1);
 //        }
         updateSongIndices();
-
+        updatePersistentStorage();
         // 刷新列表适配器
-        MusicLoader.deleteMusic(this, position);
+//        MusicLoader.deleteMusic(this, position);
         ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
         // 更新播放按钮状态
         if (isCurrentSongDeleted) {
@@ -1320,20 +1321,12 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
             ListView lv = (ListView) parent;
             Map<String, Object> map = (Map<String, Object>) lv.getAdapter().getItem(position);
             selectSong = Song.fromMap(map);
-
             selectedPosition = position;
-            try {
-                playSongAt(position);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-
-            ((BaseAdapter) lv.getAdapter()).notifyDataSetChanged();
-            RadioGroup radioGroup = findViewById(R.id.radiogroup);
 
             if (!selectSong.equals(song)) {//!selectSong.getName().equals(song.getName())
                 try {
-                    musicPlayer.loadMusic(selectSong);
+//                    musicPlayer.loadMusic(selectSong);
+                    playSongAt(position);
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
@@ -1355,25 +1348,40 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
                 isResettingProgress = false;
 
             } else {
-                switchPlayStatus(PlayerStatus.PAUSED);
-                playBtn.setText("暂停");
+                if (musicPlayer.isPlaying()) {
+                    switchPlayStatus(PlayerStatus.PAUSED);
+                    playBtn.setText("播放");
+                } else if (musicPlayer.isPaused()) {
+                    switchPlayStatus(PlayerStatus.PLAYING);
+                    playBtn.setText("暂停");
+                } else {
+                    try {
+                        playSongAt(position);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
             }
 //            song = selectSong;
-
-            if (radioGroup.getCheckedRadioButtonId() != R.id.shuffled) {
-                if (position <= lv.getChildCount() - 2) {
-                    listview.setSelection(0);
-                } else if (position - lv.getFirstVisiblePosition() <= 0) {
-                    listview.setSelection(position - (lv.getChildCount() - 2));
-                }
+            boolean isCurrentSong = selectSong.equals(song);
+            if (!isCurrentSong) {
+                ((BaseAdapter) lv.getAdapter()).notifyDataSetChanged();
+                RadioGroup radioGroup = findViewById(R.id.radiogroup);
+                if (radioGroup.getCheckedRadioButtonId() != R.id.shuffled) {
+                    if (position <= lv.getChildCount() - 2) {
+                        listview.setSelection(0);
+                    } else if (position - lv.getFirstVisiblePosition() <= 0) {
+                        listview.setSelection(position - (lv.getChildCount() - 2));
+                    }
 //                else if(position-lv.getFirstVisiblePosition() <= 0){
 //                    listview.setSelection(position);
 //                }
-            } else {
-                listview.setSelection(position);
+                } else {
+                    listview.setSelection(position);
+                }
+                playBtn.setText("暂停");
+                new Thread(new ProgressSync()).start();
             }
-            playBtn.setText("暂停");
-            new Thread(new ProgressSync()).start();
         }
 
     }
