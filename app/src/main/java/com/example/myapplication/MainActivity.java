@@ -1325,7 +1325,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
 
             if (!selectSong.equals(song)) {//!selectSong.getName().equals(song.getName())
                 try {
-//                    musicPlayer.loadMusic(selectSong);
+//                    musicPlayer.loadMusic(selectSong);------------------------------------------------------------------------------
                     playSongAt(position);
                 } catch (IOException e) {
                     throw new RuntimeException(e);
