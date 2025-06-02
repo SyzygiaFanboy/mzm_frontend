@@ -1,10 +1,12 @@
-package com.example.myapplication;
+package com.example.myapplication.model;
 
 import android.content.Context;
 
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
+
+import com.example.myapplication.MusicLoader;
 
 import java.util.List;
 import java.util.Map;
@@ -18,9 +20,11 @@ import java.util.Map;
 public class MusicViewModel extends ViewModel {
     private MutableLiveData<List<Map<String, Object>>> musicList = new MutableLiveData<>();
     private String currentPlaylist;
+
     public void setCurrentPlaylist(String playlist) {
         this.currentPlaylist = playlist;
     }
+
     public void loadSongs(Context context, String playlist) {
         new Thread(() -> {
             List<Map<String, Object>> data = MusicLoader.loadSongs(context, playlist); // 传递两个参数

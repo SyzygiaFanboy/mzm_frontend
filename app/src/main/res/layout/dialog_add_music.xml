@@ -2,6 +2,7 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:fitsSystemWindows="true"
     android:orientation="vertical"
     android:padding="16dp">
 
@@ -9,13 +10,13 @@
         android:id="@+id/etSongName"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="歌曲名称"/>
+        android:hint="歌曲名称" />
 
     <EditText
         android:id="@+id/etDuration"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="时长（秒）"
-        android:inputType="number"/>
+        android:inputType="number" />
 
 </LinearLayout>

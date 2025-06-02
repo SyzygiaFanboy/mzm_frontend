@@ -4,7 +4,7 @@ import android.content.Context;
 import android.media.MediaPlayer;
 
 import com.example.myapplication.PlayerStatus;
-import com.example.myapplication.Song;
+import com.example.myapplication.model.Song;
 import java.io.IOException;
 
 public class RealPlayerAdapter implements IMusicPlayer {

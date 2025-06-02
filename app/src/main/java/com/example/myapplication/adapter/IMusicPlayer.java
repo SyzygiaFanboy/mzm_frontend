@@ -1,6 +1,6 @@
 package com.example.myapplication.adapter;
 
-import com.example.myapplication.Song;
+import com.example.myapplication.model.Song;
 import com.example.myapplication.PlayerStatus;
 
 public interface IMusicPlayer {

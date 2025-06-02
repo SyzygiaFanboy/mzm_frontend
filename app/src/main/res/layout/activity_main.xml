@@ -1,347 +1,346 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<androidx.drawerlayout.widget.DrawerLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.drawerlayout.widget.DrawerLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/drawer_layout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:fitsSystemWindows="true"
     tools:context=".MainActivity">
 
-<androidx.constraintlayout.widget.ConstraintLayout
-    android:id="@+id/main"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    tools:context=".MainActivity">
-
-    <androidx.appcompat.widget.Toolbar
-        android:id="@+id/toolbar"
-        android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"
-        android:background="@android:color/transparent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"/>
-
-    <!-- 背景图 -->
-    <ImageView
-        android:id="@+id/backgroundImage"
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/main"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:scaleType="centerCrop"
-        android:src="@drawable/background"
-        android:alpha="0.65"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent"/>
+        tools:context=".MainActivity">
 
-    <!-- 专辑封面区域 -->
-    <ImageView
-        android:id="@+id/albumArt"
-        android:layout_width="200dp"
-        android:layout_height="200dp"
-        android:scaleType="centerCrop"
-        android:src="@drawable/default_cover"
-        android:contentDescription="专辑封面"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        android:layout_marginTop="32dp"/>
+        <androidx.appcompat.widget.Toolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:background="@android:color/transparent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
 
-    <!-- 控制按钮区域（播放/停止/上下首） -->
-    <LinearLayout
-        android:id="@+id/controlButtons"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center"
-        app:layout_constraintTop_toBottomOf="@id/albumArt"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        android:layout_marginTop="24dp">
+        <!-- 背景图 -->
+        <ImageView
+            android:id="@+id/backgroundImage"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:alpha="0.65"
+            android:contentDescription="背景图"
+            android:scaleType="centerCrop"
+            android:src="@drawable/background"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
 
-        <Button
-            android:id="@+id/previous"
+        <!-- 专辑封面区域 -->
+        <ImageView
+            android:id="@+id/albumArt"
+            android:layout_width="200dp"
+            android:layout_height="200dp"
+            android:layout_marginTop="32dp"
+            android:contentDescription="专辑封面"
+            android:scaleType="centerCrop"
+            android:src="@drawable/default_cover"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <!-- 控制按钮区域（播放/停止/上下首） -->
+        <LinearLayout
+            android:id="@+id/controlButtons"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="上一首"
-            android:onClick="previous"
-            android:textSize="16sp"/>
+            android:layout_marginTop="24dp"
+            android:gravity="center"
+            android:orientation="horizontal"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/albumArt">
 
-        <Button
-            android:id="@+id/playerbutton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="播放"
-            android:textSize="16sp"
-            android:layout_marginStart="16dp"
-            android:layout_marginEnd="16dp"/>
+            <Button
+                android:id="@+id/previous"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:onClick="previous"
+                android:text="上一首"
+                android:textSize="16sp" />
 
-        <Button
-            android:id="@+id/next"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="下一首"
-            android:onClick="next"
-            android:textSize="16sp"/>
+            <Button
+                android:id="@+id/playerbutton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="播放"
+                android:textSize="16sp" />
 
-    </LinearLayout>
+            <Button
+                android:id="@+id/next"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:onClick="next"
+                android:text="下一首"
+                android:textSize="16sp" />
+        </LinearLayout>
 
-<!--    <CheckBox-->
-<!--        android:id="@+id/cb_delete_file"-->
-<!--        android:layout_width="wrap_content"-->
-<!--        android:layout_height="wrap_content"-->
-<!--        android:text="同时删除本地文件"-->
-<!--        app:layout_constraintBottom_toBottomOf=""-->
-<!--        app:layout_constraintLeft_toLeftOf=""-->
-<!--        android:checked="false"/>-->
+        <!--    <CheckBox-->
+        <!--        android:id="@+id/cb_delete_file"-->
+        <!--        android:layout_width="wrap_content"-->
+        <!--        android:layout_height="wrap_content"-->
+        <!--        android:text="同时删除本地文件"-->
+        <!--        app:layout_constraintBottom_toBottomOf=""-->
+        <!--        app:layout_constraintLeft_toLeftOf=""-->
+        <!--        android:checked="false"/>-->
 
-    <!-- 进度条和播放时间 -->
-    <TextView
-        android:id="@+id/textpreogress"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="00:00/03:00"
-        android:textSize="14sp"
-        app:layout_constraintTop_toBottomOf="@id/controlButtons"
-        app:layout_constraintStart_toStartOf="parent"
-        android:layout_marginStart="16dp"
-        android:layout_marginTop="8dp"/>
-
-    <SeekBar
-        android:id="@+id/progressBar"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        app:layout_constraintTop_toBottomOf="@id/textpreogress"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
-        android:layout_marginTop="8dp"/>
-
-    <!-- 播放模式选择（单曲/顺序/随机） -->
-    <RadioGroup
-        android:id="@+id/radiogroup"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:checkedButton="@id/sequential"
-        app:layout_constraintTop_toBottomOf="@id/progressBar"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        android:layout_marginTop="8dp">
-
-        <RadioButton
-            android:id="@+id/singleendless"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="单曲循环"
-            android:textSize="12sp"/>
-
-        <RadioButton
-            android:id="@+id/sequential"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="顺序循环"
-            android:textSize="12sp"
-            android:layout_marginStart="8dp"/>
-
-        <RadioButton
-            android:id="@+id/shuffled"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="随机循环"
-            android:textSize="12sp"
-            android:layout_marginStart="8dp"/>
-    </RadioGroup>
-
-    <!-- 当前播放歌曲标题和批量操作按钮 -->
-    <LinearLayout
-        android:id="@+id/currentSongLayout"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        app:layout_constraintTop_toBottomOf="@id/radiogroup"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
-        android:layout_marginTop="8dp">
-
+        <!-- 进度条和播放时间 -->
         <TextView
-            android:id="@+id/currentSong"
+            android:id="@+id/textpreogress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="8dp"
+            android:text="00:00/03:00"
+            android:textSize="14sp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/controlButtons" />
+
+        <SeekBar
+            android:id="@+id/progressBar"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="当前播放：暂无歌曲"
-            android:textSize="14sp"
-            android:ellipsize="end"
-            android:maxLines="1"/>
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginEnd="16dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/textpreogress" />
 
-        <!-- 全选复选框（默认隐藏） -->
-        <CheckBox
-            android:id="@+id/cbSelectAll"
+        <!-- 播放模式选择（单曲/顺序/随机） -->
+        <RadioGroup
+            android:id="@+id/radiogroup"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="全选"
-            android:visibility="gone"
-            android:layout_marginEnd="8dp"/>
+            android:layout_marginTop="8dp"
+            android:checkedButton="@id/sequential"
+            android:orientation="horizontal"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/progressBar">
 
-        <!-- 批量删除按钮 -->
-        <ImageButton
-            android:id="@+id/btnBatchDelete"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:src="@drawable/ic_batch_delete"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="删除选中"
-            android:scaleType="centerInside"
-            android:layout_marginEnd="8dp"/>
+            <RadioButton
+                android:id="@+id/singleendless"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="单曲循环"
+                android:textSize="12sp" />
 
-        <ImageButton
-            android:id="@+id/btnBatchSelect"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:src="@drawable/ic_batch_select"
-        android:background="?attr/selectableItemBackgroundBorderless"
-        android:contentDescription="批量选择"
-        android:scaleType="centerInside"
-        android:layout_marginStart="8dp"/>
-    </LinearLayout>
+            <RadioButton
+                android:id="@+id/sequential"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="顺序循环"
+                android:textSize="12sp" />
 
-    <!-- 歌曲列表和操作按钮 -->
-    <ListView
-        android:id="@+id/playlist"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        app:layout_constraintTop_toBottomOf="@id/currentSongLayout"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/moveButtons"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
-        android:layout_marginTop="16dp"/>
+            <RadioButton
+                android:id="@+id/shuffled"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="随机循环"
+                android:textSize="12sp" />
+        </RadioGroup>
 
-    <!-- 添加/删除/上移/下移按钮 -->
-    <LinearLayout
-        android:id="@+id/moveButtons"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        android:layout_marginBottom="16dp">
-
-        <Button
-            android:id="@+id/addMusic"
-            android:layout_width="wrap_content"
+        <!-- 当前播放歌曲标题和批量操作按钮 -->
+        <LinearLayout
+            android:id="@+id/currentSongLayout"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="添加"
-            android:textSize="14sp"/>
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginEnd="16dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/radiogroup">
 
-        <Button
-            android:id="@+id/removeMusic"
-            android:layout_width="wrap_content"
+            <TextView
+                android:id="@+id/currentSong"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="当前播放：暂无歌曲"
+                android:textSize="14sp" />
+
+            <!-- 全选复选框（默认隐藏） -->
+            <CheckBox
+                android:id="@+id/cbSelectAll"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:text="全选"
+                android:visibility="gone" />
+
+            <!-- 批量删除按钮 -->
+            <ImageButton
+                android:id="@+id/btnBatchDelete"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_marginEnd="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="删除选中"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_batch_delete" />
+
+            <ImageButton
+                android:id="@+id/btnBatchSelect"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_marginStart="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="批量选择"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_batch_select" />
+        </LinearLayout>
+
+        <!-- 歌曲列表和操作按钮 -->
+        <ListView
+            android:id="@+id/playlist"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginEnd="16dp"
+            app:layout_constraintBottom_toTopOf="@id/moveButtons"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/currentSongLayout" />
+
+        <!-- 添加/删除/上移/下移按钮 -->
+        <LinearLayout
+            android:id="@+id/moveButtons"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="删除"
-            android:textSize="14sp"
-            android:layout_marginStart="8dp"/>
+            android:layout_marginBottom="16dp"
+            android:gravity="center"
+            android:orientation="horizontal"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent">
 
-        <Button
-            android:id="@+id/btnMoveUp"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="上移"
-            android:textSize="14sp"
-            android:layout_marginStart="8dp"/>
+            <Button
+                android:id="@+id/addMusic"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="添加"
+                android:textSize="14sp" />
 
-        <Button
-            android:id="@+id/btnMoveDown"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="下移"
-            android:textSize="14sp"
-            android:layout_marginStart="8dp"/>
+            <Button
+                android:id="@+id/removeMusic"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="删除"
+                android:textSize="14sp" />
 
-<!--        <Button-->
-<!--            android:id="@+id/btnBatchDelete"-->
-<!--            android:layout_width="match_parent"-->
-<!--            android:layout_height="wrap_content"-->
-<!--            android:text="删除选中"-->
-<!--            android:visibility="gone"-->
-<!--            app:layout_constraintBottom_toTopOf="@+id/moveButtons"-->
-<!--            android:layout_marginHorizontal="16dp"/>-->
-    </LinearLayout>
+            <Button
+                android:id="@+id/btnMoveUp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="上移"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/btnMoveDown"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="下移"
+                android:textSize="14sp" />
+
+            <!--        <Button-->
+            <!--            android:id="@+id/btnBatchDelete"-->
+            <!--            android:layout_width="match_parent"-->
+            <!--            android:layout_height="wrap_content"-->
+            <!--            android:text="删除选中"-->
+            <!--            android:visibility="gone"-->
+            <!--            app:layout_constraintBottom_toTopOf="@+id/moveButtons"-->
+            <!--            android:layout_marginHorizontal="16dp"/>-->
+        </LinearLayout>
+    </androidx.constraintlayout.widget.ConstraintLayout>
 
     <!--侧边栏-->
-    </androidx.constraintlayout.widget.ConstraintLayout>
     <FrameLayout
         android:id="@+id/sidebar"
         android:layout_width="320dp"
         android:layout_height="match_parent"
         android:layout_gravity="start"
-        android:orientation="vertical"
         android:background="@android:color/white"
-        >
+        android:orientation="vertical">
 
         <Button
             android:id="@+id/menu_search"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="搜索在线音乐"
+            android:layout_marginTop="8dp"
             android:drawableLeft="@drawable/ic_search"
             android:gravity="start|center_vertical"
-            android:layout_marginTop="8dp"/>
+            android:text="搜索在线音乐" />
 
         <ImageView
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:alpha="0.5"
             android:scaleType="centerCrop"
-        android:src="@drawable/sidebar_bg"
-        android:alpha="0.5" />
+            android:src="@drawable/sidebar_bg" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="vertical"
             android:padding="16dp">
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
 
-            android:textSize="20sp"
-            android:textStyle="bold"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="20sp"
+                android:textStyle="bold" />
 
-         <Button
-             android:id="@+id/menu_logout"
-             android:layout_width="match_parent"
-             android:layout_height="wrap_content"
-             android:text="退出登录"
-             android:layout_marginTop="16dp"/>
+            <Button
+                android:id="@+id/menu_logout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="退出登录" />
 
             <Button
                 android:id="@+id/menu_back_to_playlists"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="返回歌单列表"
-                android:layout_marginTop="8dp"/>
+                android:layout_marginTop="8dp"
+                android:text="返回歌单列表" />
 
-        <Button
-            android:id="@+id/menu_item1"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="设置"
-            android:layout_marginTop="8dp"/>
+            <Button
+                android:id="@+id/menu_item1"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="设置" />
 
-        <Button
-            android:id="@+id/menu_item2"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="关于"
-            android:layout_marginTop="8dp"/>
+            <Button
+                android:id="@+id/menu_item2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="关于" />
         </LinearLayout>
-</FrameLayout>
+    </FrameLayout>
 </androidx.drawerlayout.widget.DrawerLayout>

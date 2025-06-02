@@ -1,5 +1,8 @@
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="56dp"
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
     android:padding="8dp">
 
     <!-- 管理模式下可见，多选框 -->
@@ -7,24 +10,48 @@
         android:id="@+id/cbSelect"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:visibility="gone"/>
+        android:visibility="gone" />
 
-    <!-- 歌单名称 -->
-    <TextView
-        android:id="@+id/tvName"
-        android:layout_width="wrap_content"
+    <ImageView
+        android:id="@+id/playlistCover"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:contentDescription="默认歌单封面"
+        android:scaleType="fitCenter"
+        android:src="@drawable/default_playlist_cover" />
+
+    <LinearLayout
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_toEndOf="@id/cbSelect"
-        android:layout_centerVertical="true"
-        android:textSize="16sp"/>
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp">
+
+        <TextView
+            android:id="@+id/playlistName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="歌单名"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/songCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="歌曲数: 0"
+            android:textColor="@android:color/darker_gray"
+            android:textSize="14sp" />
+    </LinearLayout>
 
     <!-- 管理模式下可见，拖拽句柄 -->
     <ImageView
         android:id="@+id/imgHandle"
         android:layout_width="24dp"
         android:layout_height="24dp"
-        android:src="@drawable/ic_drag_handle"
         android:layout_alignParentEnd="true"
         android:layout_centerVertical="true"
-        android:visibility="gone"/>
-</RelativeLayout>
+        android:src="@drawable/ic_drag_handle"
+        android:visibility="gone" />
+</LinearLayout>
