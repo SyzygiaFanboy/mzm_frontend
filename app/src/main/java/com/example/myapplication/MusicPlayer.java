@@ -29,6 +29,7 @@ public class MusicPlayer {
     private int startPosition = 0;
 
     private volatile boolean isReleased = false;
+    private boolean isCompletionLegitimate = true;
 
     private boolean isSeeking = false;
 
@@ -41,6 +42,9 @@ public class MusicPlayer {
 
     private OnSongCompletionListener completionListener;
     // 通过构造函数接收 Context
+    public void setCompletionLegitimate(boolean legit) {
+        this.isCompletionLegitimate = legit;
+    }
 
     public MusicPlayer(Context context) {
         this.context = context.getApplicationContext(); // 使用全局上下文
@@ -67,6 +71,11 @@ public class MusicPlayer {
         this.progressListener = listener;
     }
     public void loadMusic(Song song) throws IOException {
+        // 加入此段代码以防止 completion 回调在 reset 后误触发
+        isCompletionLegitimate = false;
+        if (mediaPlayer != null) {
+            mediaPlayer.setOnCompletionListener(null);  // 清除旧监听器
+        }
 
         // 统一 reset 或 new， 需要保证回到 Idle
         if (mediaPlayer == null) {
@@ -111,11 +120,18 @@ public class MusicPlayer {
         mediaPlayer.setOnCompletionListener(mp -> {
             playStatus = PlayerStatus.STOPPED;
             stopProgressUpdates();
-            if (completionListener != null) {
-                new Handler(Looper.getMainLooper())
-                        .post(completionListener::onSongCompleted);
+
+            // 加保护：仅在合法状态下才回调
+            if (isCompletionLegitimate && completionListener != null) {
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    completionListener.onSongCompleted();
+                });
             }
+
+            // 重置标志
+            isCompletionLegitimate = true;
         });
+
 
         // 根据路径类型，设置 DataSource
         String path = song.getFilePath();
@@ -233,6 +249,7 @@ public class MusicPlayer {
 
     public void stop() {
         playStatus = PlayerStatus.STOPPED;
+        isCompletionLegitimate = false;
         if (mediaPlayer != null) {
             try {
                 if (mediaPlayer.isPlaying()) {
