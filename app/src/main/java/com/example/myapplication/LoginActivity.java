@@ -12,6 +12,7 @@ import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.Socket;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -61,29 +62,18 @@ public class LoginActivity extends AppCompatActivity {
                 return; // 直接返回，不执行后续网络请求
             }
 
-//            if(username == "1" && password == "1")
-//            {
-//
-//                startActivity(new Intent(LoginActivity.this, MainActivity.class));
-//                finish();
-//            }
-
             HttpUtil.post("login", params, new HttpUtil.HttpCallback() {
                 @Override
                 public void onSuccess(String response) {
+                    Log.d("LoginActivity","SUCCESSINHERE");
                     runOnUiThread(() -> {
-//                        if(username == "1" && password == "1")
-//                        {
-//
-//                            startActivity(new Intent(LoginActivity.this, MainActivity.class));
-//                            finish();
-//                        }
                         if ("SUCCESS".equals(response) ) {
                             // 保存登录状态
                             SharedPreferences preferences = getSharedPreferences("user_pref", MODE_PRIVATE);
                             preferences.edit().putBoolean("is_logged_in", true).apply();
                             //启动页面
                             startActivity(new Intent(LoginActivity.this, MainActivity.class));
+                            Log.d("LoginActivity","SUCCESS");
                             finish();
                         } else {
                             Toast.makeText(LoginActivity.this, "用户名或密码错误", Toast.LENGTH_SHORT).show();
@@ -93,6 +83,16 @@ public class LoginActivity extends AppCompatActivity {
 
                 @Override
                 public void onFailure(String error) {
+                    try {
+                        Socket s = new Socket("10.0.2.2", 8080);
+                        Log.d("网络测试", "连接成功！");
+                    } catch (IOException e) {
+                        Log.e("网络测试", "连接失败：" + e.getMessage());
+                    }
+
+
+
+                    Log.d("LoginActivity","FAILURE:" + error);
                     runOnUiThread(() ->
                             Toast.makeText(LoginActivity.this, "登录失败：" + error, Toast.LENGTH_SHORT).show());
                 }

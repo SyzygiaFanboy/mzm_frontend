@@ -6,14 +6,18 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.constraintlayout.widget.ConstraintLayout;
 
 import com.example.myapplication.MusicPlayer;
 import com.example.myapplication.MyApp;
@@ -46,15 +50,26 @@ public class PlaylistListActivity extends AppCompatActivity {
         ListView listView = findViewById(R.id.lvPlaylists);
         ImageButton btnNew = findViewById(R.id.btnNewPlaylist);
         ImageButton btnDelete = findViewById(R.id.btnDeletePlaylist);
-
+        ImageButton btnMore = findViewById(R.id.btnMore);
+        ConstraintLayout manageBar = findViewById(R.id.manageBar);
+        CheckBox cbSelectAll = findViewById(R.id.cbSelectAll);
         // 加载已有歌单
         loadPlaylists();
-
         adapter = new PlaylistAdapter(this, playlists);
         listView.setAdapter(adapter);
+        cbSelectAll.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (isChecked) {
+                adapter.selectAll();
+            } else {
+                adapter.clearSelection();
+            }
+        });
 
-//关于短按长按可能需要修改
-        // 短按：进入歌单
+        adapter.setOnSelectionChanged(() -> {
+            boolean allSelected = adapter.getSelectedIndices().size() == adapter.getCount();
+            cbSelectAll.setChecked(allSelected);
+        });
+
         listView.setOnItemClickListener((parent, view, position, id) -> {
             listView.clearChoices();
             adapter.notifyDataSetChanged();  // 刷新 UI，隐藏任何打勾
@@ -65,20 +80,38 @@ public class PlaylistListActivity extends AppCompatActivity {
             intent.putExtra("playlist", selected);
             startActivity(intent);
         });
-
-        // 长按：切换选中状态（用于删除）
-        listView.setOnItemLongClickListener((parent, view, position, id) -> {
-            boolean currently = listView.isItemChecked(position);
-            listView.setItemChecked(position, !currently);
-            return true;
+        // 进入管理模式
+        btnMore.setOnClickListener(v -> {
+            if (adapter.isManageMode()) {
+                // 当前是管理模式，退出管理模式
+                adapter.setManageMode(false);
+                adapter.clearSelection();
+                manageBar.setVisibility(View.GONE);
+                btnDelete.setVisibility(View.GONE);
+            } else {
+                // 当前不是管理模式，进入管理模式
+                adapter.setManageMode(true);
+                manageBar.setVisibility(View.VISIBLE);
+                btnDelete.setVisibility(View.VISIBLE);
+            }
         });
 
+// 删除所选
         btnDelete.setOnClickListener(v -> {
-            int pos = listView.getCheckedItemPosition();
-            if (pos >= 0 && pos < playlists.size()) {
-                String name = playlists.get(pos).getName();
-                confirmAndDeletePlaylist(name, pos);
+            List<Integer> selected = adapter.getSelectedIndices();
+            Collections.sort(selected, Collections.reverseOrder()); // 先删除后面的，防止下标错乱
+
+            for (int index : selected) {
+                Playlist p = playlists.get(index);
+                try {
+                    MusicLoader.removePlaylistEntries(this, p.getName());
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+                adapter.removeAt(index);
             }
+
+            savePlaylist(); // 更新 SharedPreferences
         });
 
         // 新建歌单
@@ -135,8 +168,9 @@ public class PlaylistListActivity extends AppCompatActivity {
                 .setPositiveButton("确定", (dialog, which) -> {
                     String name = input.getText().toString();
                     Playlist newPlaylist = new Playlist(name, 0, R.drawable.default_playlist_cover);
-                    playlists.add(newPlaylist);
-                    adapter.notifyDataSetChanged();
+//                    playlists.add(newPlaylist);
+//                    adapter.notifyDataSetChanged();
+                    adapter.addPlaylist(newPlaylist);
                     savePlaylist(); // 保存到文件或数据库
                 })
                 .setNegativeButton("取消", null)
@@ -144,24 +178,23 @@ public class PlaylistListActivity extends AppCompatActivity {
     }
 
     private void savePlaylist() {
-        // 读取 prefs
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        // 覆盖保存
         String playlistsJson = Playlist.toJson(playlists);
         prefs.edit().putString(KEY_PLAYLISTS, playlistsJson).apply();
     }
 
+
     private void loadPlaylists() {
-        // 读取 SharedPreferences 已有歌单
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         String playlistsJson = prefs.getString(KEY_PLAYLISTS, null);
+        playlists.clear();
         if (playlistsJson != null) {
-            playlists = Playlist.fromJson(playlistsJson);
+            playlists.addAll(Playlist.fromJson(playlistsJson));
         } else {
-            // 第一次安装，初始化两个默认歌单
             playlists.add(new Playlist("默认歌单", 0, R.drawable.default_playlist_cover));
             playlists.add(new Playlist("我的收藏", 0, R.drawable.default_playlist_cover));
-            savePlaylist(); // 保存到 prefs
+            savePlaylist();
         }
     }
+
 }

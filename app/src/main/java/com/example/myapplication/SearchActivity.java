@@ -11,6 +11,8 @@ import com.example.myapplication.model.Song;
 import com.example.myapplication.model.Songinf;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
+
+import java.io.UnsupportedEncodingException;
 import java.util.Collections;
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -77,7 +79,11 @@ public class SearchActivity extends AppCompatActivity {
             // 有选中，添加到本地列表
             for (Songinf song : songList) {
                 if (song.isSelected()) {
-                    addToLocalPlaylist(song);
+                    try {
+                        addToLocalPlaylist(song);
+                    } catch (UnsupportedEncodingException e) {
+                        throw new RuntimeException(e);
+                    }
                 }
             }
 
@@ -91,14 +97,16 @@ public class SearchActivity extends AppCompatActivity {
 
     }
     // SearchActivity.java
-    private void addToLocalPlaylist(Songinf serverSong) {
+    private void addToLocalPlaylist(Songinf serverSong) throws UnsupportedEncodingException {
         String serverAddress = etServer.getText().toString().trim();
         // 确保路径格式正确（避免双斜杠）
         String cleanPath = serverSong.getSongpath().startsWith("/") ?
                 serverSong.getSongpath().substring(1) :
                 serverSong.getSongpath();
 
-        String fullPath = "http://" + serverAddress + "/" + cleanPath; // 修正路径拼接
+        String fullPath = "http://" + serverAddress + "/" + cleanPath;
+
+
         Log.d("SearchActivity", "addToLocalPlaylist: songId = " + serverSong.getSongid());
         Song localSong = new Song(
                 serverSong.getSongduration(),
