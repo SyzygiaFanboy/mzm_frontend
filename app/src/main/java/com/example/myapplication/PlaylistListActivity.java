@@ -16,6 +16,7 @@ import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.constraintlayout.widget.ConstraintLayout;
 
@@ -112,12 +113,25 @@ public class PlaylistListActivity extends AppCompatActivity {
             }
 
             savePlaylist(); // 更新 SharedPreferences
+            updateAllSongCounts();
         });
 
         // 新建歌单
         btnNew.setOnClickListener(v -> showCreateDialog());
     }
 
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode == RESULT_OK) {
+            updateAllSongCounts(); // 歌单内容变更后刷新
+        }
+    }
+    @Override
+    protected void onResume() {
+        super.onResume();
+        updateAllSongCounts(); // 每次进入页面时刷新歌曲数量
+    }
     private void confirmAndDeletePlaylist(String name, int pos) {
         new AlertDialog.Builder(this)
                 .setTitle("删除歌单")
@@ -172,6 +186,7 @@ public class PlaylistListActivity extends AppCompatActivity {
 //                    adapter.notifyDataSetChanged();
                     adapter.addPlaylist(newPlaylist);
                     savePlaylist(); // 保存到文件或数据库
+                    updateAllSongCounts();
                 })
                 .setNegativeButton("取消", null)
                 .show();
@@ -196,5 +211,18 @@ public class PlaylistListActivity extends AppCompatActivity {
             savePlaylist();
         }
     }
+
+    private void updateAllSongCounts() {
+        for (Playlist p : playlists) {
+            try {
+                int count = MusicLoader.getSongCountFromPlaylist(this, p.getName());
+                p.setSongCount(count);
+            } catch (IOException e) {
+                p.setSongCount(0); // 出错时置为 0
+            }
+        }
+        adapter.notifyDataSetChanged(); // 更新 UI
+    }
+
 
 }

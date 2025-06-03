@@ -88,6 +88,22 @@ public class MusicLoader {
         }
     }
 
+    public static int getSongCountFromPlaylist(Context context, String playlistName) throws IOException {
+        File file = getMusicFile(context);
+        if (!file.exists()) return 0;
+
+        int count = 0;
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                // 格式: 歌单名,时长,歌曲名,文件路径
+                if (line.startsWith(playlistName + ",")) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
 
     private static void saveRemoteUrl(Context context, Song song) {
         File file = getMusicFile(context);

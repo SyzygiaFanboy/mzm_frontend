@@ -956,11 +956,12 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
                 if (dialogMessage != null) {
                     dialogMessage.setText("歌曲添加完成");
                 }
-
+                setResult(RESULT_OK);
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
                     dismissProgressDialog();
                 }, 800);
             });
+
         }).start();
     }
 
@@ -1028,7 +1029,8 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
 
         // 从数据源中移除项
         musicList.remove(position);
-
+        updatePersistentStorage();
+        setResult(RESULT_OK);
         // 调整后续项的序号
 //        for (int i = position; i < musicList.size(); i++) {
 //            musicList.get(i).put("index", i + 1);
