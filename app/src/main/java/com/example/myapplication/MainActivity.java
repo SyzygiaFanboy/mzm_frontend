@@ -1220,9 +1220,10 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
         isAutoNextTriggered = false; // 重置自动触发标志
         isAutoTriggeredByCompletion = true;
         isSongChanging = true;
-        if (musicPlayer.isPlaying()) {
+        if (musicPlayer.isPlaying() || musicPlayer.isPaused()) {
             musicPlayer.stop();
         }
+
         // 获取歌曲对象
         Map<String, Object> songMap = musicList.get(index);
         Song songToPlay = Song.fromMap(songMap);
@@ -1240,7 +1241,6 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
         // 加载并播放歌曲
         musicPlayer.loadMusic(songToPlay);
         musicPlayer.setCurrentPositiontozero();
-        musicPlayer.play();
         ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
 
         // 更新ListView的选中状态
@@ -1276,8 +1276,8 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
         }
         progressSyncThread = new Thread(new ProgressSync());
         progressSyncThread.start();
-
         isSongChanging = false;
+        musicPlayer.setCompletionLegitimate(true);
     }
     //下面的上一首按钮与下一首按钮将来有可能调整UI的时候会删除
     public void next(View view) throws IOException {
@@ -1498,20 +1498,20 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
                         progressBar.setProgress(currentPosition);
                         preogress.setText(formatTime(currentPosition) + "/" + formatTime(totalDuration));
 
-                        // 自动切换逻辑
-                        if (currentPosition >= totalDuration - 50
-                                && !isSongChanging
-                                && !isAutoNextTriggered
-                                && musicPlayer.getPlayStatus() == PlayerStatus.PLAYING
-                                && !musicList.isEmpty()) {
-                            isAutoNextTriggered = true;
-                            Log.d("MainActivity", "自动切歌");
-                            try {
-                                playNextSong();
-                            } catch (IOException e) {
-                                throw new RuntimeException(e);
-                            }
-                        }
+//                        // 自动切换逻辑
+//                        if (currentPosition >= totalDuration - 50
+//                                && !isSongChanging
+//                                && !isAutoNextTriggered
+//                                && musicPlayer.getPlayStatus() == PlayerStatus.PLAYING
+//                                && !musicList.isEmpty()) {
+//                            isAutoNextTriggered = true;
+//                            Log.d("MainActivity", "自动切歌");
+//                            try {
+//                                playNextSong();
+//                            } catch (IOException e) {
+//                                throw new RuntimeException(e);
+//                            }
+//                        }
                     });
                     Thread.sleep(50);
                 }
