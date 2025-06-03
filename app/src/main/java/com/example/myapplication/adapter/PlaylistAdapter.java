@@ -1,6 +1,8 @@
 package com.example.myapplication.adapter;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -9,6 +11,7 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.BaseAdapter;
 
+import com.example.myapplication.MusicCoverUtils;
 import com.example.myapplication.model.Playlist;
 import com.example.myapplication.R;
 
@@ -113,7 +116,17 @@ public class PlaylistAdapter extends BaseAdapter {
         ImageView ivHandle = convertView.findViewById(R.id.imgHandle);
         CheckBox cbSelect = convertView.findViewById(R.id.cbSelect);
 
-        ivCover.setImageResource(playlist.getCoverRes());
+        String coverPath = playlist.getLatestCoverPath();
+        if (coverPath != null && !coverPath.isEmpty()) {
+            Bitmap coverBitmap = MusicCoverUtils.getCoverFromFile(coverPath, context);
+            if (coverBitmap != null) {
+                ivCover.setImageBitmap(coverBitmap);
+            } else {
+                ivCover.setImageResource(playlist.getCoverRes());
+            }
+        } else {
+            ivCover.setImageResource(playlist.getCoverRes());
+        }
         tvName.setText(playlist.getName());
         tvCount.setText("歌曲数：" + playlist.getSongCount());
 
@@ -123,9 +136,10 @@ public class PlaylistAdapter extends BaseAdapter {
         ivHandle.setVisibility(inManageMode ? View.VISIBLE : View.GONE);
 
         cbSelect.setOnClickListener(v -> toggleSelected(position));
-
+        Log.d("PlaylistAdapter", "封面路径: " + playlist.getLatestCoverPath());
         return convertView;
     }
+
 
     // 可扩展拖动排序函数（后面再加）
 }

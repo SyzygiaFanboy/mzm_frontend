@@ -51,6 +51,7 @@ import androidx.lifecycle.ViewModelProvider;
 // MainActivity.java
 import com.example.myapplication.adapter.BatchModeAdapter;
 import com.example.myapplication.model.MusicViewModel;
+import com.example.myapplication.model.Playlist;
 import com.example.myapplication.model.Song;
 
 import android.widget.Button;
@@ -950,7 +951,9 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
                         btnNext.setEnabled(true);
                         btnPrevious.setEnabled(true);
                     }
+                    updatePlaylistCover(currentPlaylist);
                 }
+
                 //dismissProgressDialog();
                 //toast一个
                 if (dialogMessage != null) {
@@ -965,6 +968,36 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
         }).start();
     }
 
+    private void updatePlaylistCover(String playlistName) {
+        new Thread(() -> {
+            String latestCoverPath = MusicLoader.getLatestCoverForPlaylist(
+                    MainActivity.this, playlistName);
+
+            SharedPreferences prefs = getSharedPreferences(
+                    PlaylistListActivity.PREFS, MODE_PRIVATE);
+            String playlistsJson = prefs.getString(
+                    PlaylistListActivity.KEY_PLAYLISTS, null);
+            if (latestCoverPath == null) {
+                latestCoverPath = ""; // 避免 null
+            }
+            if (playlistsJson != null) {
+                List<Playlist> playlists = Playlist.fromJson(playlistsJson);
+                for (Playlist playlist : playlists) {
+                    if (playlist.getName() != null && playlist.getName().equals(playlistName)) {
+                        playlist.setLatestCoverPath(latestCoverPath);
+                        break;
+                    }
+                }
+                // 保存更新后的歌单列表
+                String updatedJson = Playlist.toJson(playlists);
+                prefs.edit().putString(
+                        PlaylistListActivity.KEY_PLAYLISTS, updatedJson).apply();
+                Log.d("MainActivity", "最新封面路径为: " + latestCoverPath);
+                Log.d("MainActivity", "更新并保存封面成功: " + playlistName);
+            }
+        }).start();
+
+    }
     //删除音乐，注意只是删除按钮的逻辑，复选框逻辑在初始化那块写了，闲得无聊可以合并一下
     private void deleteSelectedSong(int position) {
 
