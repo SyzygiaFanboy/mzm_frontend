@@ -39,6 +39,15 @@ public class MusicPlayer {
     public interface OnSongCompletionListener {
         void onSongCompleted();
     }
+    private enum InternalState {
+        IDLE, PREPARING, PREPARED, PLAYING, PAUSED, STOPPED, RELEASED
+    }
+    private boolean canStop() {
+        return playStatus == PlayerStatus.PLAYING || playStatus == PlayerStatus.PAUSED;
+    }
+
+    private InternalState internalState = InternalState.IDLE;
+
 
     private OnSongCompletionListener completionListener;
     // 通过构造函数接收 Context
@@ -72,7 +81,7 @@ public class MusicPlayer {
     }
     public void loadMusic(Song song) throws IOException {
         // 加入此段代码以防止 completion 回调在 reset 后误触发
-        isCompletionLegitimate = false;
+        isCompletionLegitimate = true;
         if (mediaPlayer != null) {
             mediaPlayer.setOnCompletionListener(null);  // 清除旧监听器
         }
@@ -252,8 +261,8 @@ public class MusicPlayer {
         isCompletionLegitimate = false;
         if (mediaPlayer != null) {
             try {
-                if (mediaPlayer.isPlaying()) {
-                    mediaPlayer.stop();
+                if (playStatus == PlayerStatus.PLAYING || playStatus == PlayerStatus.PAUSED) {
+                    mediaPlayer.stop();  // 只有 PLAYING 状态下这句才合法，但我们加 try-catch 容错
                 }
                 mediaPlayer.release();
             } catch (IllegalStateException e) {
@@ -261,8 +270,9 @@ public class MusicPlayer {
             }
             mediaPlayer = null;
         }
-        stopProgressUpdates(); // 停止进度更新
+        stopProgressUpdates();
     }
+
 
 
     public boolean isPlaying(){
