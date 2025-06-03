@@ -1,5 +1,6 @@
 package com.example.myapplication;
 import android.content.Context;
+import android.net.Uri;
 import android.os.Build;
 import android.util.Log;
 
@@ -10,6 +11,7 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -105,49 +107,37 @@ public class MusicLoader {
         return count;
     }
 
-    private static void saveRemoteUrl(Context context, Song song) {
+    public static String getLatestCoverForPlaylist(Context context, String playlistName) {
         File file = getMusicFile(context);
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(file, true))) {
-            String line = song.getRawDuration() + "," + song.getName() + "," + song.getFilePath();
-            bw.write(line);
-            bw.newLine();
-        } catch (IOException e) {
-            Log.e(TAG, "保存在线音乐失败: " + e.getMessage());
-        }
-    }
+        if (!file.exists()) return null;
 
-    // 删除指定位置的音乐（对应文件中的行号）
-    public static void deleteMusic(Context context, int position) {
-        File file = getMusicFile(context);
-        List<String> lines = new ArrayList<>();
-
-        try {
-            // 读取所有行到内存
-            BufferedReader reader = new BufferedReader(new FileReader(file));
+        String latestCoverPath = null;
+        long latestTime = 0;
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
             String line;
             while ((line = reader.readLine()) != null) {
-                lines.add(line);
-            }
-            reader.close();
-            // 检查position有效性
-            if (position < 0 || position >= lines.size()) {
-                Log.e(TAG, "无效的删除位置: " + position);
-                return;
-            }
-            // 移除指定行
-            lines.remove(position);
-            // 重新写入文件（覆盖）
-            BufferedWriter writer = new BufferedWriter(new FileWriter(file));
-            for (String l : lines) {
-                writer.write(l);
-                writer.newLine();
-            }
-            writer.close();
+                Log.d("MusicLoader", "Line: " + line);
+                String[] parts = line.split(",");
+                if (parts.length >= 4 && parts[0].trim().equals(playlistName)) {
+                    String filePath = parts[3].trim();
+                    Uri uri = Uri.parse(filePath);
+                    try (InputStream input = context.getContentResolver().openInputStream(uri)) {
+                        if (input != null) {
+                            long lastModified = System.currentTimeMillis(); // 无法直接获取，只能用当前时间
+                            if (lastModified > latestTime) {
+                                latestTime = lastModified;
+                                latestCoverPath = filePath;
+                            }
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, "无法读取 URI: " + filePath + " 错误：" + e.getMessage());
+                    }
 
-            Log.d(TAG, "删除成功，位置: " + position);
-
+                }
+            }
         } catch (IOException e) {
-            Log.e(TAG, "删除失败: " + e.getMessage());
+            Log.e(TAG, "获取最新封面失败: " + e.getMessage());
         }
+        return latestCoverPath;
     }
 }

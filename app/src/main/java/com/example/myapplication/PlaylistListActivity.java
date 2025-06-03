@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -39,8 +40,8 @@ import java.nio.file.*;
 public class PlaylistListActivity extends AppCompatActivity {
     private List<Playlist> playlists = new ArrayList<>();
     private PlaylistAdapter adapter;
-    private static final String PREFS = "playlist_prefs";
-    private static final String KEY_PLAYLISTS = "playlists";
+    public static final String PREFS = "playlist_prefs";
+    public static final String KEY_PLAYLISTS = "playlists";
 
 
     @Override
@@ -130,7 +131,15 @@ public class PlaylistListActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        loadPlaylists();
         updateAllSongCounts(); // 每次进入页面时刷新歌曲数量
+        for (Playlist playlist : playlists) {
+            String coverPath = MusicLoader.getLatestCoverForPlaylist(this, playlist.getName());
+            playlist.setLatestCoverPath(coverPath);
+        }
+        if (adapter != null) {
+            adapter.notifyDataSetChanged();
+        }
     }
     private void confirmAndDeletePlaylist(String name, int pos) {
         new AlertDialog.Builder(this)
@@ -193,9 +202,14 @@ public class PlaylistListActivity extends AppCompatActivity {
     }
 
     private void savePlaylist() {
+        for (Playlist playlist : playlists) {
+            String coverPath = MusicLoader.getLatestCoverForPlaylist(this, playlist.getName());
+            playlist.setLatestCoverPath(coverPath);
+        }
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         String playlistsJson = Playlist.toJson(playlists);
         prefs.edit().putString(KEY_PLAYLISTS, playlistsJson).apply();
+        Log.d("PlaylistSave", "Saved playlists: " + playlistsJson);
     }
 
 
@@ -209,6 +223,10 @@ public class PlaylistListActivity extends AppCompatActivity {
             playlists.add(new Playlist("默认歌单", 0, R.drawable.default_playlist_cover));
             playlists.add(new Playlist("我的收藏", 0, R.drawable.default_playlist_cover));
             savePlaylist();
+        }
+        for (Playlist playlist : playlists) {
+            String coverPath = MusicLoader.getLatestCoverForPlaylist(this, playlist.getName());
+            playlist.setLatestCoverPath(coverPath);
         }
     }
 
