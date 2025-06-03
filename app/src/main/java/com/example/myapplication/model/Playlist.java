@@ -28,13 +28,15 @@ public class Playlist {
         return coverRes;
     }
 
+    public void setSongCount(int count) {
+        this.songCount = count;
+    }
+
     public static List<Playlist> fromJson(String json) {
-        // 使用 Gson 或其他库解析 JSON 字符串为 List<Playlist>
         return new Gson().fromJson(json, new TypeToken<List<Playlist>>() {}.getType());
     }
 
     public static String toJson(List<Playlist> playlists) {
-        // 使用 Gson 或其他库将 List<Playlist> 转换为 JSON 字符串
         return new Gson().toJson(playlists);
     }
 }

@@ -95,6 +95,8 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
     private volatile String currentCoverPath;
     private static final int PICK_MUSIC_REQUEST = 1;
     private String currentPlaylist;
+    private boolean isAutoTriggeredByCompletion = false;
+
 
     //进度加载弹窗的成员变量
     private AlertDialog progressDialog;
@@ -614,7 +616,20 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
         }
     }
 
-    // MainActivity.java - playNextSong()
+    private int getCurrentSongPosition() {
+        if (musicPlayer == null || musicPlayer.getCurrentSong() == null) {
+            return -1;
+        }
+        Song current = musicPlayer.getCurrentSong();
+        for (int i = 0; i < musicList.size(); i++) {
+            Song songInList = Song.fromMap(musicList.get(i));
+            if (songInList.equals(current)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     public void playNextSong() throws IOException {
         Log.d("MainActivity", "尝试播放下一首歌曲");
         // 检查列表是否为空
@@ -628,6 +643,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
             progressSyncThread.interrupt();
             isProgressSyncRunning = false;
         }
+        musicPlayer.setCompletionLegitimate(false);
 
         // 重置自动触发标志
         isAutoNextTriggered = false;
@@ -940,11 +956,12 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
                 if (dialogMessage != null) {
                     dialogMessage.setText("歌曲添加完成");
                 }
-
+                setResult(RESULT_OK);
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
                     dismissProgressDialog();
                 }, 800);
             });
+
         }).start();
     }
 
@@ -1012,7 +1029,8 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
 
         // 从数据源中移除项
         musicList.remove(position);
-
+        updatePersistentStorage();
+        setResult(RESULT_OK);
         // 调整后续项的序号
 //        for (int i = position; i < musicList.size(); i++) {
 //            musicList.get(i).put("index", i + 1);
@@ -1167,6 +1185,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
             return;
         }
         isAutoNextTriggered = false; // 重置自动触发标志
+        isAutoTriggeredByCompletion = true;
         isSongChanging = true;
         if (musicPlayer.isPlaying()) {
             musicPlayer.stop();
@@ -1174,8 +1193,6 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
         // 获取歌曲对象
         Map<String, Object> songMap = musicList.get(index);
         Song songToPlay = Song.fromMap(songMap);
-
-
         // 检查文件是否存在
         if (!isFileValid(songToPlay.getFilePath())) {
             runOnUiThread(() -> {
@@ -1229,59 +1246,106 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
 
         isSongChanging = false;
     }
-
-    // 暴露给MusicPlayer的回调方法
-    public void resetAutoNextFlag() {
-        isAutoNextTriggered = false;
-    }
     //下面的上一首按钮与下一首按钮将来有可能调整UI的时候会删除
-    //下一首按钮处理逻辑
     public void next(View view) throws IOException {
         isAutoNextTriggered = true;
         RadioGroup radioGroup = findViewById(R.id.radiogroup);
         int checkedId = radioGroup.getCheckedRadioButtonId();
         int nextPos;
+
         if (musicList.isEmpty()) {
             Toast.makeText(this, "播放列表为空", Toast.LENGTH_SHORT).show();
             return;
         }
+
         if (checkedId == R.id.singleendless) {
-            nextPos = selectedPosition; // 单曲循环，位置不变
+            nextPos = selectedPosition;
         } else if (checkedId == R.id.shuffled) {
             nextPos = new Random().nextInt(musicList.size());
-        } else { // 顺序模式
+        } else {
             nextPos = (selectedPosition + 1) % musicList.size();
         }
 
-        // 唯一索引更新点
         selectedPosition = nextPos;
-        playSongAt(selectedPosition); // 仅调用 playSongAt() 处理播放
-        //playNextSong();
+        Map<String, Object> map = musicList.get(nextPos);
+        selectSong = Song.fromMap(map);
+
+        if (!selectSong.equals(song)) {
+            playSongAt(nextPos);
+            song = selectSong;
+
+            TextView currentSongTV = findViewById(R.id.currentSong);
+            currentSongTV.setText(selectSong.getName());
+            playBtn.setEnabled(true);
+            musicPlayer.setCurrentPositiontozero();
+            loadMusicCover(selectSong.getFilePath());
+
+            isResettingProgress = true;
+            progressBar.setMax(selectSong.getTimeDuration());
+            progressBar.setProgress(0);
+            preogress.setText("0");
+            playBtn.setText("暂停");
+            isResettingProgress = false;
+
+            if (progressSyncThread != null && progressSyncThread.isAlive()) {
+                isProgressSyncRunning = false;
+                progressSyncThread.interrupt();
+            }
+            new Thread(new ProgressSync()).start();
+        }
     }
-    //下一首按钮处理逻辑
+
+    //上一首按钮处理逻辑
     public void previous(View view) throws IOException {
         isAutoNextTriggered = true;
-        RadioGroup radiogroup = findViewById(R.id.radiogroup);
-        int currentPos = selectedPosition; // 使用全局变量selectedPosition
-        int prePos = -1;
-        int checkedId = radiogroup.getCheckedRadioButtonId();
+        RadioGroup radioGroup = findViewById(R.id.radiogroup);
+        int currentPos = selectedPosition;
+        int prePos;
+
+        if (musicList.isEmpty()) {
+            Toast.makeText(this, "播放列表为空", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        int checkedId = radioGroup.getCheckedRadioButtonId();
         if (checkedId == R.id.singleendless) {
             prePos = currentPos;
         } else if (checkedId == R.id.shuffled) {
-            prePos = new Random().nextInt(musicList.size()); // 直接使用musicList的size
+            prePos = new Random().nextInt(musicList.size());
         } else {
-            if (currentPos < 0) {
-                prePos = 0;
-            } else if (currentPos == 0) {
-                prePos = musicList.size() - 1;
-            } else {
-                prePos = currentPos - 1;
-            }
+            prePos = currentPos == 0 ? musicList.size() - 1 : currentPos - 1;
         }
+
         selectedPosition = prePos;
-        playSongAt(prePos);
+        Map<String, Object> map = musicList.get(prePos);
+        selectSong = Song.fromMap(map);
+
+        if (!selectSong.equals(song)) {
+            playSongAt(prePos);
+            song = selectSong;
+
+            TextView currentSongTV = findViewById(R.id.currentSong);
+            currentSongTV.setText(selectSong.getName());
+            playBtn.setEnabled(true);
+            musicPlayer.setCurrentPositiontozero();
+            loadMusicCover(selectSong.getFilePath());
+
+            isResettingProgress = true;
+            progressBar.setMax(selectSong.getTimeDuration());
+            progressBar.setProgress(0);
+            preogress.setText("0");
+            playBtn.setText("暂停");
+            isResettingProgress = false;
+
+            if (progressSyncThread != null && progressSyncThread.isAlive()) {
+                isProgressSyncRunning = false;
+                progressSyncThread.interrupt();
+            }
+            new Thread(new ProgressSync()).start();
+        }
     }
-//更改歌曲播放状态
+
+    //更改歌曲播放状态
     private void switchPlayStatus(PlayerStatus status) {
         switch (status) {
             case PLAYING:
