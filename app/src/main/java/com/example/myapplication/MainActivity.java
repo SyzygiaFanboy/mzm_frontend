@@ -60,6 +60,8 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -714,22 +716,38 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
     }
 
     private void updatePersistentStorage() {
+        String currentPlaylist = this.currentPlaylist; // 确保你当前保存了选中的歌单名
         File file = MusicLoader.getMusicFile(this);
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(file, false))) {
+        List<String> allLines = new ArrayList<>();
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                allLines = Files.readAllLines(file.toPath(), StandardCharsets.UTF_8);
+            }
+            List<String> kept = new ArrayList<>();
+            for (String line : allLines) {
+                if (!line.startsWith(currentPlaylist + ",")) {
+                    kept.add(line);
+                }
+            }
             for (Map<String, Object> item : musicList) {
-                String playlist = (String) item.get("playlist"); // 获取歌单名
+                String playlist = (String) item.get("playlist");
                 String name = (String) item.get("name");
                 String formattedTime = (String) item.get("TimeDuration");
                 String filePath = (String) item.get("filePath");
                 int duration = Song.parseTime(formattedTime);
+
                 String line = playlist + "," + duration + "," + name + "," + filePath;
-                writer.write(line);
-                writer.newLine();
+                kept.add(line);
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Files.write(file.toPath(), kept, StandardCharsets.UTF_8);
             }
         } catch (IOException e) {
             Log.e(TAG, "更新存储失败", e);
         }
     }
+
 
     private void updateNavButtons() {
         boolean hasItems = !musicList.isEmpty();

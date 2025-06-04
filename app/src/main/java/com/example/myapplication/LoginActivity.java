@@ -29,24 +29,6 @@ public class LoginActivity extends AppCompatActivity {
         etPassword = findViewById(R.id.et_password);
         Button btnLogin = findViewById(R.id.btn_login);
         Button btnGotoRegister = findViewById(R.id.btn_goto_register);
-
-//        btnLogin.setOnClickListener(v -> {
-//            String username = etUsername.getText().toString().trim();
-//            String password = etPassword.getText().toString().trim();
-//
-//            if (username.isEmpty() || password.isEmpty()) {
-//                Toast.makeText(this, "请填写完整信息", Toast.LENGTH_SHORT).show();
-//                return;
-//            }
-//
-//            if (validateUser(username, password)) {
-//                saveLoginStatus(true);
-//                startActivity(new Intent(this, MainActivity.class));
-//                finish();
-//            } else {
-//                Toast.makeText(this, "账号或密码错误", Toast.LENGTH_SHORT).show();
-//            }
-//        });
         btnLogin.setOnClickListener(v -> {
             String username = etUsername.getText().toString().trim();
             String password = etPassword.getText().toString().trim();
@@ -57,7 +39,7 @@ public class LoginActivity extends AppCompatActivity {
 
             if ("1".equals(username) && "1".equals(password)) {
                 saveLoginStatus(true);
-                startActivity(new Intent(LoginActivity.this, MainActivity.class));
+                startActivity(new Intent(LoginActivity.this, PlaylistListActivity.class));
                 finish();
                 return; // 直接返回，不执行后续网络请求
             }
@@ -72,7 +54,7 @@ public class LoginActivity extends AppCompatActivity {
                             SharedPreferences preferences = getSharedPreferences("user_pref", MODE_PRIVATE);
                             preferences.edit().putBoolean("is_logged_in", true).apply();
                             //启动页面
-                            startActivity(new Intent(LoginActivity.this, MainActivity.class));
+                            startActivity(new Intent(LoginActivity.this, PlaylistListActivity.class));
                             Log.d("LoginActivity","SUCCESS");
                             finish();
                         } else {
