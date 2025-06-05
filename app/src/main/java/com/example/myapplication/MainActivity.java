@@ -188,10 +188,20 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
         if (currentPlaylist == null) currentPlaylist = "默认歌单";
         loadMusicList(listview,currentPlaylist);
         updateNavButtons();
-        // 绑定返回歌单按钮
-        Button btnBackToPlaylists = findViewById(R.id.menu_back_to_playlists);
-        btnBackToPlaylists.setOnClickListener(v -> {
-            // 跳转到歌单列表页面，可以看看怎么改
+//        // 绑定返回歌单按钮
+//        Button btnBackToPlaylists = findViewById(R.id.menu_back_to_playlists);
+//        btnBackToPlaylists.setOnClickListener(v -> {
+//            // 跳转到歌单列表页面，可以看看怎么改
+//            Intent intent = new Intent(MainActivity.this, PlaylistListActivity.class);
+//            startActivity(intent);
+//            finish();
+//        });
+        Toolbar toolbar = findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().setDisplayShowTitleEnabled(false);
+        }
+        toolbar.setNavigationOnClickListener(v -> {
             Intent intent = new Intent(MainActivity.this, PlaylistListActivity.class);
             startActivity(intent);
             finish();
@@ -223,41 +233,39 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
             }
         });
 
-        // 退出按钮监听
-        findViewById(R.id.menu_logout).setOnClickListener(v -> {
-            // 停止播放并释放播放器资源
-            if (musicPlayer != null) {
-                musicPlayer.stop();
-                musicPlayer.release();
-            }
-
-            // 终止进度，同时同步线程
-            if (progressSyncThread != null && progressSyncThread.isAlive()) {
-                progressSyncThread.interrupt();
-                isProgressSyncRunning = false;
-            }
-
-            SharedPreferences preferences = getSharedPreferences("user_pref", MODE_PRIVATE);
-            preferences.edit().putBoolean("is_logged_in", false).apply();
-            startActivity(new Intent(this, LoginActivity.class));
-            finish();
-        });
-        Toolbar toolbar = findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
-        DrawerLayout drawerLayout = findViewById(R.id.drawer_layout);
-        ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
-                this,
-                drawerLayout,
-                toolbar,
-                R.string.navigation_drawer_open,
-                R.string.navigation_drawer_close
-        );
-        drawerLayout.addDrawerListener(toggle);
-        toggle.syncState();
-        // 隐藏 ActionBar 标题
-        if (getSupportActionBar() != null) {
-            getSupportActionBar().setDisplayShowTitleEnabled(false);
-        }
+//        // 退出按钮监听
+//        findViewById(R.id.menu_logout).setOnClickListener(v -> {
+//            // 停止播放并释放播放器资源
+//            if (musicPlayer != null) {
+//                musicPlayer.stop();
+//                musicPlayer.release();
+//            }
+//
+//            // 终止进度，同时同步线程
+//            if (progressSyncThread != null && progressSyncThread.isAlive()) {
+//                progressSyncThread.interrupt();
+//                isProgressSyncRunning = false;
+//            }
+//
+//            SharedPreferences preferences = getSharedPreferences("user_pref", MODE_PRIVATE);
+//            preferences.edit().putBoolean("is_logged_in", false).apply();
+//            startActivity(new Intent(this, LoginActivity.class));
+//            finish();
+//        });
+//        DrawerLayout drawerLayout = findViewById(R.id.drawer_layout);
+//        ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
+//                this,
+//                drawerLayout,
+//                toolbar,
+//                R.string.navigation_drawer_open,
+//                R.string.navigation_drawer_close
+//        );
+//        drawerLayout.addDrawerListener(toggle);
+//        toggle.syncState();
+//        // 隐藏 ActionBar 标题
+//        if (getSupportActionBar() != null) {
+//            getSupportActionBar().setDisplayShowTitleEnabled(false);
+//        }
 
         // 请求存储权限
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -268,11 +276,11 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
                 startActivityForResult(intent, REQUEST_CODE_STORAGE_PERMISSION);
             }
         }
-        findViewById(R.id.menu_search).setOnClickListener(v -> {
-            Intent intent = new Intent(MainActivity.this, SearchActivity.class);
-            startActivityForResult(intent, REQUEST_CODE_SEARCH); // 使用 startActivityForResult
-            drawerLayout.closeDrawer(GravityCompat.START);
-        });
+//        findViewById(R.id.menu_search).setOnClickListener(v -> {
+//            Intent intent = new Intent(MainActivity.this, SearchActivity.class);
+//            startActivityForResult(intent, REQUEST_CODE_SEARCH); // 使用 startActivityForResult
+//            drawerLayout.closeDrawer(GravityCompat.START);
+//        });
 
 //        musicPlayer = new MusicPlayer(getApplicationContext());
 //        musicPlayer.setOnSongCompletionListener(this);

@@ -40,7 +40,12 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/AppTheme" />
+            android:theme="@style/AppTheme"
+            android:parentActivityName=".PlaylistListActivity">
+        <meta-data
+            android:name="android.support.PARENT_ACTIVITY"
+            android:value=".PlaylistListActivity" />
+        </activity>
         <activity
             android:name=".SearchActivity"
             android:exported="false"    />
@@ -49,6 +54,7 @@
             android:exported="true"/>
         <activity
             android:name=".PlaylistListActivity"
+            android:theme="@style/AppTheme"
             android:exported="true"/>
 
     </application>
