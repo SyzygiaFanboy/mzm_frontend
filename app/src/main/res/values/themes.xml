@@ -4,7 +4,10 @@
     </style>
 
     <!-- 主应用主题 -->
-    <style name="AppTheme" parent="Base.Theme.MyApplication" />
+    <style name="AppTheme" parent="Base.Theme.MyApplication">
+        <item name="colorControlNormal">#c69bc5</item>
+    </style>
+
 
     <!-- 全屏无标题栏主题 -->
     <style name="AppTheme.NoActionBar">
@@ -16,4 +19,5 @@
     <style name="SplashTheme" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowFullscreen">true</item>
     </style>
+
 </resources>

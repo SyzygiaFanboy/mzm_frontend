@@ -22,7 +22,8 @@
             android:background="@android:color/transparent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
+            app:layout_constraintTop_toTopOf="parent"
+            app:navigationIcon="@drawable/ic_arrow_back"/>
 
         <!-- 背景图 -->
         <ImageView
@@ -87,16 +88,6 @@
                 android:textSize="16sp" />
         </LinearLayout>
 
-        <!--    <CheckBox-->
-        <!--        android:id="@+id/cb_delete_file"-->
-        <!--        android:layout_width="wrap_content"-->
-        <!--        android:layout_height="wrap_content"-->
-        <!--        android:text="同时删除本地文件"-->
-        <!--        app:layout_constraintBottom_toBottomOf=""-->
-        <!--        app:layout_constraintLeft_toLeftOf=""-->
-        <!--        android:checked="false"/>-->
-
-        <!-- 进度条和播放时间 -->
         <TextView
             android:id="@+id/textpreogress"
             android:layout_width="wrap_content"
@@ -266,81 +257,6 @@
                 android:text="下移"
                 android:textSize="14sp" />
 
-            <!--        <Button-->
-            <!--            android:id="@+id/btnBatchDelete"-->
-            <!--            android:layout_width="match_parent"-->
-            <!--            android:layout_height="wrap_content"-->
-            <!--            android:text="删除选中"-->
-            <!--            android:visibility="gone"-->
-            <!--            app:layout_constraintBottom_toTopOf="@+id/moveButtons"-->
-            <!--            android:layout_marginHorizontal="16dp"/>-->
         </LinearLayout>
     </androidx.constraintlayout.widget.ConstraintLayout>
-
-    <!--侧边栏-->
-    <FrameLayout
-        android:id="@+id/sidebar"
-        android:layout_width="320dp"
-        android:layout_height="match_parent"
-        android:layout_gravity="start"
-        android:background="@android:color/white"
-        android:orientation="vertical">
-
-        <Button
-            android:id="@+id/menu_search"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:drawableLeft="@drawable/ic_search"
-            android:gravity="start|center_vertical"
-            android:text="搜索在线音乐" />
-
-        <ImageView
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:alpha="0.5"
-            android:scaleType="centerCrop"
-            android:src="@drawable/sidebar_bg" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:padding="16dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textSize="20sp"
-                android:textStyle="bold" />
-
-            <Button
-                android:id="@+id/menu_logout"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="退出登录" />
-
-            <Button
-                android:id="@+id/menu_back_to_playlists"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="返回歌单列表" />
-
-            <Button
-                android:id="@+id/menu_item1"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="设置" />
-
-            <Button
-                android:id="@+id/menu_item2"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="关于" />
-        </LinearLayout>
-    </FrameLayout>
 </androidx.drawerlayout.widget.DrawerLayout>
