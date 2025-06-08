@@ -33,11 +33,11 @@ android {
 
 dependencies {
     //implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation ("androidx.media:media:1.6.0")
-    implementation ("com.google.android.material:material:1.9.0")
-    implementation ("com.airbnb.android:lottie:3.7.0")
-    implementation ("com.google.code.gson:gson:2.12.1")
-    implementation ("com.squareup.okhttp3:okhttp:4.9.3")
+    implementation(libs.media)
+    implementation(libs.material)
+    implementation(libs.lottie)
+    implementation(libs.gson)
+    implementation(libs.okhttp)
     implementation(libs.appcompat)
     implementation(libs.material)
     implementation(libs.activity)
