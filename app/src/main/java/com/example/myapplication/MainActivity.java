@@ -3,10 +3,12 @@ package com.example.myapplication;
 import static android.content.ContentValues.TAG;
 
 import android.annotation.SuppressLint;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.graphics.Bitmap;
+import android.media.MediaMetadataRetriever;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
@@ -24,8 +26,11 @@ import android.widget.AdapterView;
 import android.widget.BaseAdapter;
 import android.widget.CheckBox;
 
+import androidx.activity.EdgeToEdge;
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -38,35 +43,44 @@ import android.widget.Toast;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 
-import androidx.appcompat.app.ActionBarDrawerToggle;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
-import androidx.core.view.GravityCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
-import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.lifecycle.ViewModelProvider;
 // MainActivity.java
 import com.example.myapplication.adapter.BatchModeAdapter;
 import com.example.myapplication.model.MusicViewModel;
 import com.example.myapplication.model.Playlist;
 import com.example.myapplication.model.Song;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 import android.widget.Button;
 
-import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileWriter;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSongCompletionListener {
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.HttpUrl;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+
+public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSongCompletionListener {
 
     // 修改默认歌曲构造，避免硬编码路径，这块大概率以后要改
     private Song song = new Song(0, "暂无歌曲", "", "");
@@ -97,6 +111,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
     private boolean isAutoNextTriggered = false;
     private volatile String currentCoverPath;
     private static final int PICK_MUSIC_REQUEST = 1;
+    private static final int REQUEST_CODE_BILI = 2; // B站音乐请求码
     private String currentPlaylist;
     private boolean isAutoTriggeredByCompletion = false;
 
@@ -122,13 +137,11 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
             new Thread(new ProgressSync()).start();
         }
     }
+
     // 声明 musicList 为 public static（临时方案，得改）
     public static List<Map<String, Object>> musicList = new ArrayList<>();
 
     // 添加公共方法用于添加歌曲
-//    public static void addSongToPlaylist(Song song) {
-//        musicList.add(song.toMap(musicList.size() + 1));
-//    }
     public static void addSongToPlaylist(Song song) {
         // 通过文件路径判重
         for (Map<String, Object> item : musicList) {
@@ -145,15 +158,20 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
         }
     }
 
+    public interface myCallback<T> {
+        void onResult(T result);
+    }
+
+
     @SuppressLint("MissingInflatedId")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        //EdgeToEdge.enable(this);
+        EdgeToEdge.enable(this);
         Song song = new Song(0, "暂无歌曲", "", "");
         setContentView(R.layout.activity_main);
         //musicPlayer = new MusicPlayer(this);
-        musicPlayer = ((MyApp)getApplication()).getMusicPlayer();
+        musicPlayer = ((MyApp) getApplication()).getMusicPlayer();
         musicPlayer.setOnSongCompletionListener(this);
         try {
             musicPlayer.loadMusic(song);
@@ -186,7 +204,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
         }
         currentPlaylist = getIntent().getStringExtra("playlist");
         if (currentPlaylist == null) currentPlaylist = "默认歌单";
-        loadMusicList(listview,currentPlaylist);
+        loadMusicList(listview, currentPlaylist);
         updateNavButtons();
 //        // 绑定返回歌单按钮
 //        Button btnBackToPlaylists = findViewById(R.id.menu_back_to_playlists);
@@ -485,15 +503,62 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
             }
         });
 
-        // 初始化音乐文件
+        // 添加按钮
         Button Addbtn = findViewById(R.id.addMusic);
-        // 修改添加按钮点击事件
         Addbtn.setOnClickListener(v -> {
-            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            intent.addCategory(Intent.CATEGORY_OPENABLE);
-            intent.setType("audio/*");
-            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true); // 关键：允许多选
-            startActivityForResult(intent, PICK_MUSIC_REQUEST);
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("选择添加方式");
+
+            // 设置选项
+            String[] options = {"从本地添加", "从BV号 / 链接添加", "从B站收藏夹添加"};
+            builder.setItems(options, (dialog, which) -> {
+                if (which == 0) {
+                    // 添加本地音乐
+                    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType("audio/*");
+                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true); // 允许多选
+                    startActivityForResult(intent, PICK_MUSIC_REQUEST);
+                } else if (which == 1) {
+                    // 添加B站音乐，用回调处理需要的值
+                    // 先处理用户输入的数据（处理移动端短链、bv或av号等）
+                    showBVInputDialog(bv -> {
+                        // 按取消返回 null
+                        if (bv == null) {
+                            return;
+                        }
+                        try {
+                            // 获取音频流函数
+                            getBiliMusic(bv, this, result -> runOnUiThread(() -> {
+                                if (result != null) {
+                                    String title = (String) result.get("title");
+                                    File f = (File) result.get("file");
+                                    String path = f.getAbsolutePath();
+
+                                    // 获取文件信息，用于转化成song
+                                    MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+                                    retriever.setDataSource(path);
+                                    String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                                    int duration = Integer.parseInt(durationStr) / 1000;
+
+                                    // 封装、添加到歌单
+                                    Song newSong = new Song(duration, title, path, currentPlaylist);
+                                    addSongToPlaylist(newSong);
+                                    ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
+                                    Toast.makeText(MainActivity.this, "已添加到歌单", Toast.LENGTH_SHORT).show();
+                                } else {
+                                    Toast.makeText(MainActivity.this, "获取B站音乐失败", Toast.LENGTH_SHORT).show();
+                                    Log.e("BiliMusic", "获取B站音乐失败，bv: " + bv);
+                                }
+                            }));
+                        } catch (Exception e) {
+                            Toast.makeText(MainActivity.this, "无效的BV号：" + bv, Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                }
+            });
+
+            builder.create().show();
         });
 
         // 确保progressBar不为null
@@ -505,10 +570,9 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
             return insets;
         });
-
-
     }
-    //回调，
+
+    //回调
     @Override
     public void onSongCompleted() {
         Log.d("MainActivity", "收到播放完成回调");
@@ -596,6 +660,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
             listview.requestLayout();
         });
     }
+
     //字面意思
     private void toggleBatchMode() {
         isBatchMode = !isBatchMode;
@@ -756,7 +821,6 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
         }
     }
 
-
     private void updateNavButtons() {
         boolean hasItems = !musicList.isEmpty();
         btnNext.setEnabled(hasItems);
@@ -766,7 +830,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
     //这个函数可能会用到，别删
     public void refreshPlaylist() {
         // 重新从文件加载最新数据
-        musicList = MusicLoader.loadSongs(listview.getContext(),currentPlaylist);
+        musicList = MusicLoader.loadSongs(listview.getContext(), currentPlaylist);
         // 确保适配器更新
         if (listview != null) {
             BatchModeAdapter adapter = (BatchModeAdapter) listview.getAdapter();
@@ -792,6 +856,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
             listview.smoothScrollToPosition(musicList.size() - 1);
         }
     }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -842,8 +907,18 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
                 copyAndAddMusicFiles(uriList);
             }
         }
+//
+//        // 处理B站音乐输入对话框返回
+//        if (requestCode == REQUEST_CODE_BILI && resultCode == RESULT_OK) {
+//            String bvId = data.getStringExtra("bvId");
+//            if (bvId != null && !bvId.isEmpty()) {
+//                // 这里可以调用添加B站音乐的逻辑
+//                addBiliMusic(bvId);
+//            } else {
+//                Toast.makeText(this, "无效的BV号", Toast.LENGTH_SHORT).show();
+//            }
+//        }
     }
-
 
     //去重，歌曲本地储存唯一标识用的是musicname，复选删除同名歌曲将影响播放状态，但没有实现，可修改
     private boolean isSongDuplicate(Song newSong, List<Song> existingSongs) {
@@ -859,6 +934,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
         }
         return false;
     }
+
     //获取文件名，这里可以改进一下，使其能够获取在线歌曲的metadata的信息，但是注意不要修改数据库的内容，inputsong.html也可以改进一下，或者可以添加本机
     //的上传服务，实现从本机上传音乐至tomcat
     private String getFileName(Uri uri) {
@@ -908,6 +984,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
             progressDialog.dismiss();
         }
     }
+
     private void copyAndAddMusicFiles(List<Uri> uris) {
         // 在UI线程中显示进度弹窗
         runOnUiThread(() -> showProgressDialog());
@@ -947,7 +1024,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
                     if (dialogProgressBar != null) {
                         dialogProgressBar.setProgress(progressPercent);
                     }
-                    // 更新提示文字：可显示"正在添加歌曲 ，，，"
+                    // 更新提示文字
                     if (dialogMessage != null) {
                         dialogMessage.setText("正在添加歌曲 " + (currentIndex + 1) + "/" + totalFiles);
                     }
@@ -965,12 +1042,11 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
                     }
                     BatchModeAdapter adapter = (BatchModeAdapter) listview.getAdapter();
                     if (adapter != null) {
-                        //adapter.notifyDataSetChanged();
                         adapter.setData(musicList);
                         updateSongIndices();
                         adapter.notifyDataSetChanged();
                     } else {
-                        loadMusicList(listview,currentPlaylist);
+                        loadMusicList(listview, currentPlaylist);
                         updateNavButtons();
                     }
                     if (!musicList.isEmpty()) {
@@ -1024,6 +1100,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
         }).start();
 
     }
+
     //删除音乐，注意只是删除按钮的逻辑，复选框逻辑在初始化那块写了，闲得无聊可以合并一下
     private void deleteSelectedSong(int position) {
 
@@ -1064,7 +1141,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
             // 彻底释放播放器并重新初始化
             musicPlayer.stop();
             musicPlayer.release();
-            musicPlayer = ((MyApp)getApplication()).getMusicPlayer();
+            musicPlayer = ((MyApp) getApplication()).getMusicPlayer();
             musicPlayer.setProgressListener((currentPos, totalDuration) -> {
                 if (currentPos >= 0 && totalDuration >= 0) {
                     runOnUiThread(() -> {
@@ -1074,7 +1151,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
                     });
                 }
             });
-            song = new Song(0, "暂无歌曲", "","");
+            song = new Song(0, "暂无歌曲", "", "");
             // 重置UI
             musicPlayer.resetProgress();
             runOnUiThread(() -> {
@@ -1117,7 +1194,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
 
         if (musicPlayer != null) {
             musicPlayer.release(); // 释放资源
-            musicPlayer = ((MyApp)getApplication()).getMusicPlayer(); // 重新初始化
+            musicPlayer = ((MyApp) getApplication()).getMusicPlayer(); // 重新初始化
         }
         if (progressSyncThread != null && progressSyncThread.isAlive()) {
             progressSyncThread.interrupt();
@@ -1127,7 +1204,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
         // 彻底释放当前播放器资源
         if (isCurrentSongDeleted) {
             musicPlayer.release();
-            musicPlayer = ((MyApp)getApplication()).getMusicPlayer();
+            musicPlayer = ((MyApp) getApplication()).getMusicPlayer();
             musicPlayer.setProgressListener(new MusicPlayer.ProgressListener() {
                 // 重新绑定进度监听
                 @Override
@@ -1198,7 +1275,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
     }
 
     private void loadMusicList(ListView listview, String playlist) {
-        musicList = MusicLoader.loadSongs(this,playlist);
+        musicList = MusicLoader.loadSongs(this, playlist);
         for (Map<String, Object> item : musicList) {
             item.put("isSelected", false);
         }
@@ -1238,6 +1315,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
             return new File(filePath).exists();
         }
     }
+
     private void playSongAt(int index) throws IOException {
         if (index < 0 || index >= musicList.size()) {
             Toast.makeText(this, "无效的歌曲位置", Toast.LENGTH_SHORT).show();
@@ -1257,8 +1335,8 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
         if (!isFileValid(songToPlay.getFilePath())) {
             runOnUiThread(() -> {
                 Toast.makeText(this, "歌曲文件不存在或无法访问", Toast.LENGTH_SHORT).show();
-                // 从列表中移除无效项
-                musicList.remove(index);
+                // 从列表中移除无效项TODO
+//                musicList.remove(index);
                 ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
             });
             return;
@@ -1305,6 +1383,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
         isSongChanging = false;
         musicPlayer.setCompletionLegitimate(true);
     }
+
     //下面的上一首按钮与下一首按钮将来有可能调整UI的时候会删除
     public void next(View view) throws IOException {
         isAutoNextTriggered = true;
@@ -1423,6 +1502,211 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
         }
     }
 
+    private void showBVInputDialog(myCallback<String> callback) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("从BV号 / 链接添加");
+
+        EditText input = new EditText(this);
+        input.setHint("可输入BV号 / AV号 / 分享的链接");
+        builder.setView(input);
+
+        builder.setPositiveButton("确定", (dialog, which) -> {
+            String bv = input.getText().toString().trim();
+            if (bv.isEmpty()) {
+                Toast.makeText(this, "不能为空", Toast.LENGTH_SHORT).show();
+            } else {
+                // 如果是bv或av直接返回
+                if (bv.matches("BV[0-9A-Za-z]{10}") || bv.matches("av\\d+")) {
+                    callback.onResult(bv); // 调用回调传递
+                    dialog.dismiss();
+                } else if (bv.contains("https://b23.tv/")) {
+                    // 手机端分享，先提取出短链
+                    Pattern pattern = Pattern.compile("https://b23\\.tv/\\S+");
+                    Matcher matcher = pattern.matcher(bv);
+                    if (matcher.find()) {
+                        bv = matcher.group();  // 找到第一个短链
+                    }
+                    // 发送HEAD请求得到重定向的链接
+                    OkHttpClient client = new OkHttpClient.Builder()
+                            .followRedirects(false)  // 关键点：不要自动跟随重定向
+                            .build();
+
+                    Request request = new Request.Builder()
+                            .url(bv)
+                            .head() // 只取 Header，不要正文
+                            .build();
+
+                    client.newCall(request).enqueue(new Callback() {
+                        @Override
+                        public void onFailure(Call call, IOException e) {
+                            Log.e("ShortLink", "请求失败: " + e.getMessage());
+                        }
+
+                        @Override
+                        public void onResponse(Call call, Response response) throws IOException {
+                            if (response.code() == 301 || response.code() == 302) {
+                                String redirectUrl = response.header("Location");
+
+                                // 提取 BV 号
+                                Pattern pattern = Pattern.compile("BV[0-9A-Za-z]+");
+                                Matcher matcher = pattern.matcher(redirectUrl);
+                                if (matcher.find()) {
+                                    String bvid = matcher.group();
+                                    Log.d("ShortLink", "提取出的 BV 号: " + bvid);
+                                    callback.onResult(bvid); // 调用回调传递
+                                }
+                            } else {
+                                Log.e("ShortLink", "不是重定向: " + response.code());
+                            }
+                        }
+                    });
+
+                    dialog.dismiss();
+                } else if (bv.startsWith("https://www.bilibili.com/video/")) {
+                    // 电脑端链接，直接提取bv号
+                    Pattern pattern = Pattern.compile("BV[0-9A-Za-z]+");
+                    Matcher matcher = pattern.matcher(bv);
+                    if (matcher.find()) {
+                        String bvid = matcher.group();
+                        Log.d("ShortLink", "提取出的 BV 号: " + bvid);
+                        callback.onResult(bvid); // 调用回调传递
+                    }
+                } else {
+                    Toast.makeText(this, "无效的BV号格式", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+
+        builder.setNegativeButton("取消", (dialog, which) -> {
+            callback.onResult(null); // 取消则返回 null
+        });
+
+        AlertDialog dialog = builder.create();
+        dialog.show();
+    }
+
+    private void getBiliMusic(String bv, Context context, myCallback<Map<String, Object>> callback) {
+        OkHttpClient client = new OkHttpClient();
+
+        // 获取音频流要av/bv的同时还要cid
+        // Step 1: 获取 CID
+        Request cidRequest = new Request.Builder()
+                .url("https://api.bilibili.com/x/player/pagelist?bvid=" + bv)
+                .addHeader("User-Agent", "Mozilla/5.0")
+                .addHeader("Referer", "https://www.bilibili.com/")
+                .build();
+
+        client.newCall(cidRequest).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                Log.e("BiliMusic", "onFailure: " + e);
+            }
+
+            @Override
+            public void onResponse(Call call, Response res) throws IOException {
+                if (!res.isSuccessful()) {
+                    runOnUiThread(() -> Toast.makeText(context, "cid请求失败: " + res.code(), Toast.LENGTH_SHORT).show());
+                    return;
+                }
+
+                // 转成json取得cid
+                String str = res.body().string();
+                JsonObject json = JsonParser.parseString(str).getAsJsonObject().get("data").getAsJsonArray().get(0).getAsJsonObject();
+
+                long cid = json.get("cid").getAsLong();
+                Log.i("BiliMusic", "获取到的CID: " + cid);
+
+                // 顺带获取标题，用于文件名。但文件名还是bv号，防止文件名异常
+                String title = json.get("part").getAsString();
+
+                // Step 2: 获取音频 URL
+                HttpUrl url = HttpUrl.parse("https://api.bilibili.com/x/player/playurl").newBuilder()
+                        .addQueryParameter("bvid", bv)
+                        .addQueryParameter("cid", String.valueOf(cid))
+                        .addQueryParameter("fnval", "16")
+                        .build();
+
+                Request audioUrlReq = new Request.Builder()
+                        .url(url)
+                        .addHeader("User-Agent", "Mozilla/5.0")
+                        .addHeader("Referer", "https://www.bilibili.com/")
+                        .build();
+
+                client.newCall(audioUrlReq).enqueue(new Callback() {
+                    @Override
+                    public void onFailure(Call call, IOException e) {
+                        runOnUiThread(() -> Toast.makeText(context, "获取音频URL失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                    }
+
+                    @Override
+                    public void onResponse(Call call, Response response) throws IOException {
+                        if (!response.isSuccessful()) {
+                            runOnUiThread(() -> Toast.makeText(context, "音频URL请求失败: " + response.code(), Toast.LENGTH_SHORT).show());
+                            return;
+                        }
+
+                        // 请求dash，分离视频和音频流
+                        String json = response.body().string();
+                        JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
+                        JsonArray audioArray = obj.get("data").getAsJsonObject()
+                                .get("dash").getAsJsonObject()
+                                .get("audio").getAsJsonArray();
+
+                        // 防止没有高质量音频
+                        String audioUrl;
+                        if (audioArray.size() > 2) {
+                            audioUrl = audioArray.get(2).getAsJsonObject().get("baseUrl").getAsString();
+                        } else if (audioArray.size() > 1) {
+                            audioUrl = audioArray.get(1).getAsJsonObject().get("baseUrl").getAsString();
+                        } else {
+                            audioUrl = audioArray.get(0).getAsJsonObject().get("baseUrl").getAsString();
+                        }
+                        Log.i("BiliMusic", "获取到的音频URL: " + audioUrl);
+
+                        // Step 3: 下载音频文件
+                        Request downloadReq = new Request.Builder()
+                                .url(audioUrl)
+                                .addHeader("User-Agent", "Mozilla/5.0")
+                                .addHeader("Referer", "https://www.bilibili.com/")
+                                .build();
+
+                        client.newCall(downloadReq).enqueue(new Callback() {
+                            @Override
+                            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                                runOnUiThread(() -> Toast.makeText(context, "下载失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                            }
+
+                            @Override
+                            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                                // 存的文件名还是bv号
+                                File file = new File(context.getExternalFilesDir("audio"), bv + ".mp4");
+                                Log.i("BiliMusic", "下载文件路径: " + file.getAbsolutePath());
+                                try (InputStream in = response.body().byteStream();
+                                     FileOutputStream out = new FileOutputStream(file)) {
+
+                                    byte[] buffer = new byte[4096];
+                                    int len;
+                                    while ((len = in.read(buffer)) != -1) {
+                                        out.write(buffer, 0, len);
+                                    }
+
+                                    // 把文件和标题放一起返回
+                                    Map<String, Object> result = new HashMap<>();
+                                    result.put("file", file);
+                                    result.put("title", title);
+
+                                    callback.onResult(result);
+                                } catch (IOException e) {
+                                    Log.e("BiliMusic", "下载文件失败: ", e);
+                                    callback.onResult(null); // 获取失败
+                                }
+                            }
+                        });
+                    }
+                });
+            }
+        });
+    }
 
     private class MusicListItemClickListener implements AdapterView.OnItemClickListener {
         @Override
@@ -1503,6 +1787,7 @@ public class MainActivity extends AppCompatActivity  implements MusicPlayer.OnSo
         }
 
     }
+
     private class ProgressSync implements Runnable {
         @Override
         public void run() {
