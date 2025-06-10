@@ -10,13 +10,9 @@ import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
-import android.widget.ArrayAdapter;
-import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageButton;
-import android.widget.LinearLayout;
-import android.widget.ListView;
 import android.widget.TextView;
 import androidx.appcompat.widget.Toolbar;
 
@@ -28,26 +24,25 @@ import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.graphics.drawable.DrawableCompat;
 import androidx.core.view.GravityCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
+import androidx.recyclerview.widget.ItemTouchHelper;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
-import com.example.myapplication.MusicPlayer;
-import com.example.myapplication.MyApp;
-import com.example.myapplication.adapter.PlaylistAdapter;
+import com.example.myapplication.adapter.PlaylistItemTouchHelperCallback;
+import com.example.myapplication.adapter.PlaylistRecyclerAdapter;
 import com.example.myapplication.model.Playlist;
 
-import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.nio.file.*;
 
-public class PlaylistListActivity extends AppCompatActivity {
+public class PlaylistListActivity extends AppCompatActivity implements PlaylistRecyclerAdapter.OnStartDragListener {
     private List<Playlist> playlists = new ArrayList<>();
-    private PlaylistAdapter adapter;
+    private PlaylistRecyclerAdapter adapter;
+    private ItemTouchHelper itemTouchHelper;
     public static final String PREFS = "playlist_prefs";
     public static final String KEY_PLAYLISTS = "playlists";
     private DrawerLayout drawerLayout;
@@ -59,16 +54,34 @@ public class PlaylistListActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_playlist_list);
 
-        ListView listView = findViewById(R.id.lvPlaylists);
+        RecyclerView recyclerView = findViewById(R.id.rvPlaylists);
         ImageButton btnNew = findViewById(R.id.btnNewPlaylist);
         ImageButton btnDelete = findViewById(R.id.btnDeletePlaylist);
         ImageButton btnMore = findViewById(R.id.btnMore);
         ConstraintLayout manageBar = findViewById(R.id.manageBar);
         CheckBox cbSelectAll = findViewById(R.id.cbSelectAll);
+
         // 加载已有歌单
         loadPlaylists();
-        adapter = new PlaylistAdapter(this, playlists);
-        listView.setAdapter(adapter);
+
+        // 设置RecyclerView
+        recyclerView.setLayoutManager(new LinearLayoutManager(this));
+        adapter = new PlaylistRecyclerAdapter(this, playlists, this);
+        recyclerView.setAdapter(adapter);
+
+        // 设置ItemTouchHelper
+        PlaylistItemTouchHelperCallback callback = new PlaylistItemTouchHelperCallback(adapter, this::savePlaylist);
+        itemTouchHelper = new ItemTouchHelper(callback);
+        itemTouchHelper.attachToRecyclerView(recyclerView);
+
+        // 设置点击监听
+        adapter.setOnItemClickListener(position -> {
+            String selected = playlists.get(position).getName();
+            Intent intent = new Intent(this, MainActivity.class);
+            intent.putExtra("playlist", selected);
+            startActivity(intent);
+        });
+
         cbSelectAll.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (isChecked) {
                 adapter.selectAll();
@@ -78,20 +91,10 @@ public class PlaylistListActivity extends AppCompatActivity {
         });
 
         adapter.setOnSelectionChanged(() -> {
-            boolean allSelected = adapter.getSelectedIndices().size() == adapter.getCount();
+            boolean allSelected = adapter.getSelectedIndices().size() == adapter.getItemCount();
             cbSelectAll.setChecked(allSelected);
         });
 
-        listView.setOnItemClickListener((parent, view, position, id) -> {
-            listView.clearChoices();
-            adapter.notifyDataSetChanged();  // 刷新 UI，隐藏任何打勾
-
-
-            String selected = playlists.get(position).getName();
-            Intent intent = new Intent(this, MainActivity.class);
-            intent.putExtra("playlist", selected);
-            startActivity(intent);
-        });
         // 进入管理模式
         btnMore.setOnClickListener(v -> {
             if (adapter.isManageMode()) {
@@ -108,7 +111,7 @@ public class PlaylistListActivity extends AppCompatActivity {
             }
         });
 
-// 删除所选
+        // 删除所选
         btnDelete.setOnClickListener(v -> {
             List<Integer> selected = adapter.getSelectedIndices();
             Collections.sort(selected, Collections.reverseOrder()); // 先删除后面的，防止下标错乱
@@ -126,7 +129,9 @@ public class PlaylistListActivity extends AppCompatActivity {
             savePlaylist();
             updateAllSongCounts();
         });
+
         btnNew.setOnClickListener(v -> showCreateDialog());
+
         drawerLayout = findViewById(R.id.drawer_layout);
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
@@ -169,7 +174,11 @@ public class PlaylistListActivity extends AppCompatActivity {
         findViewById(R.id.menu_back_to_playlists).setOnClickListener(v -> {
             drawerLayout.closeDrawer(GravityCompat.START);
         });
+    }
 
+    @Override
+    public void onStartDrag(PlaylistRecyclerAdapter.ViewHolder holder) {
+        itemTouchHelper.startDrag(holder);
     }
 
     @Override
@@ -179,6 +188,7 @@ public class PlaylistListActivity extends AppCompatActivity {
             updateAllSongCounts(); // 歌单内容变更后刷新
         }
     }
+
     @Override
     protected void onResume() {
         super.onResume();
@@ -192,6 +202,7 @@ public class PlaylistListActivity extends AppCompatActivity {
             adapter.notifyDataSetChanged();
         }
     }
+
     private void confirmAndDeletePlaylist(String name, int pos) {
         new AlertDialog.Builder(this)
                 .setTitle("删除歌单")
