@@ -23,7 +23,7 @@
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
-            android:background="@color/white"
+            android:background="@android:color/transparent"
             android:elevation="4dp"
             app:contentInsetEnd="16dp"
             app:contentInsetStart="16dp"
@@ -104,9 +104,9 @@
                 app:layout_constraintTop_toTopOf="parent" />
         </androidx.constraintlayout.widget.ConstraintLayout>
 
-        <!-- 歌单列表 -->
-        <ListView
-            android:id="@+id/lvPlaylists"
+        <!-- 歌单列表 - 将ListView替换为RecyclerView -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvPlaylists"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1" />

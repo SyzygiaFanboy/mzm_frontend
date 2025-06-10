@@ -538,6 +538,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                     addSongToPlaylist(newSong);
                                     MusicLoader.appendMusic(this, newSong);
                                     ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
+                                    updateNavButtons();
                                     Toast.makeText(MainActivity.this, "已添加到歌单", Toast.LENGTH_SHORT).show();
                                 } else {
                                     Toast.makeText(MainActivity.this, "获取B站音乐失败", Toast.LENGTH_SHORT).show();
@@ -573,6 +574,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                     addSongToPlaylist(newSong);
                                     MusicLoader.appendMusic(this, newSong);
                                     ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
+                                    updateNavButtons();
                                     Toast.makeText(MainActivity.this, "已添加到歌单", Toast.LENGTH_SHORT).show();
                                 } else {
                                     Toast.makeText(MainActivity.this, "获取B站音乐失败", Toast.LENGTH_SHORT).show();
@@ -1415,7 +1417,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         Map<String, Object> map = musicList.get(nextPos);
         selectSong = Song.fromMap(map);
 
-        if (!selectSong.equals(song)) {
+
             playSongAt(nextPos);
             song = selectSong;
 
@@ -1437,7 +1439,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 progressSyncThread.interrupt();
             }
             new Thread(new ProgressSync()).start();
-        }
+
     }
 
     //上一首按钮处理逻辑
@@ -1465,29 +1467,28 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         Map<String, Object> map = musicList.get(prePos);
         selectSong = Song.fromMap(map);
 
-        if (!selectSong.equals(song)) {
-            playSongAt(prePos);
-            song = selectSong;
+        // 移除条件判断，始终重新加载歌曲
+        playSongAt(prePos);
+        song = selectSong;
 
-            TextView currentSongTV = findViewById(R.id.currentSong);
-            currentSongTV.setText(selectSong.getName());
-            playBtn.setEnabled(true);
-            musicPlayer.setCurrentPositiontozero();
-            loadMusicCover(selectSong.getFilePath());
+        TextView currentSongTV = findViewById(R.id.currentSong);
+        currentSongTV.setText(selectSong.getName());
+        playBtn.setEnabled(true);
+        musicPlayer.setCurrentPositiontozero();
+        loadMusicCover(selectSong.getFilePath());
 
-            isResettingProgress = true;
-            progressBar.setMax(selectSong.getTimeDuration());
-            progressBar.setProgress(0);
-            preogress.setText("0");
-            playBtn.setText("暂停");
-            isResettingProgress = false;
+        isResettingProgress = true;
+        progressBar.setMax(selectSong.getTimeDuration());
+        progressBar.setProgress(0);
+        preogress.setText("0");
+        playBtn.setText("暂停");
+        isResettingProgress = false;
 
-            if (progressSyncThread != null && progressSyncThread.isAlive()) {
-                isProgressSyncRunning = false;
-                progressSyncThread.interrupt();
-            }
-            new Thread(new ProgressSync()).start();
+        if (progressSyncThread != null && progressSyncThread.isAlive()) {
+            isProgressSyncRunning = false;
+            progressSyncThread.interrupt();
         }
+        new Thread(new ProgressSync()).start();
     }
 
     //更改歌曲播放状态
@@ -1867,6 +1868,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                     Log.e("BiliMusic", "下载文件失败: ", e);
                                     callback.onResult(null); // 获取失败
                                 }
+
+
                             }
                         });
                     }
