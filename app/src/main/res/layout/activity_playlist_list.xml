@@ -140,12 +140,6 @@
                 android:text="退出登录" />
 
             <Button
-                android:id="@+id/menu_back_to_playlists"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="关闭菜单" />
-
-            <Button
                 android:id="@+id/menu_item1"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
