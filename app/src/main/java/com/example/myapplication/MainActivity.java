@@ -8,6 +8,8 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.drawable.Drawable;
 import android.media.MediaMetadataRetriever;
 import android.media.MediaPlayer;
 import android.net.Uri;
@@ -174,6 +176,9 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         //musicPlayer = new MusicPlayer(this);
         musicPlayer = ((MyApp) getApplication()).getMusicPlayer();
         musicPlayer.setOnSongCompletionListener(this);
+
+        // 应用播放页面背景
+        applyPlaybackBackground();
         try {
             musicPlayer.loadMusic(song);
         } catch (IOException e) {
@@ -538,7 +543,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                     addSongToPlaylist(newSong);
                                     MusicLoader.appendMusic(this, newSong);
                                     ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
-                                    updateNavButtons();
                                     Toast.makeText(MainActivity.this, "已添加到歌单", Toast.LENGTH_SHORT).show();
                                 } else {
                                     Toast.makeText(MainActivity.this, "获取B站音乐失败", Toast.LENGTH_SHORT).show();
@@ -574,7 +578,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                     addSongToPlaylist(newSong);
                                     MusicLoader.appendMusic(this, newSong);
                                     ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
-                                    updateNavButtons();
                                     Toast.makeText(MainActivity.this, "已添加到歌单", Toast.LENGTH_SHORT).show();
                                 } else {
                                     Toast.makeText(MainActivity.this, "获取B站音乐失败", Toast.LENGTH_SHORT).show();
@@ -883,6 +886,85 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         if (!musicList.isEmpty()) {
             listview.smoothScrollToPosition(musicList.size() - 1);
         }
+    }
+
+    private void applyPlaybackBackground() {
+        SharedPreferences prefs = getSharedPreferences("background_prefs", MODE_PRIVATE);
+        String playbackBgPath = prefs.getString("playback_background_path", null);
+        ImageView backgroundImage = findViewById(R.id.backgroundImage);
+        if (backgroundImage != null) {
+            if (playbackBgPath != null && new File(playbackBgPath).exists()) {
+                // 设置自定义背景
+                try {
+                    // 获取ImageView的尺寸
+                    backgroundImage.post(() -> {
+                        int viewWidth = backgroundImage.getWidth();
+                        int viewHeight = backgroundImage.getHeight();
+
+                        if (viewWidth > 0 && viewHeight > 0) {
+                            // 加载并缩放图片
+                            Bitmap originalBitmap = BitmapFactory.decodeFile(playbackBgPath);
+                            if (originalBitmap != null) {
+                                // 创建缩放后的位图
+                                Bitmap scaledBitmap = createScaledBitmapForImageView(originalBitmap, viewWidth, viewHeight);
+
+                                // 设置到ImageView
+                                backgroundImage.setImageBitmap(scaledBitmap);
+                                backgroundImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                                backgroundImage.setAlpha(0.7f);
+
+                                // 回收原始位图
+                                if (originalBitmap != scaledBitmap) {
+                                    originalBitmap.recycle();
+                                }
+                            }
+                        } else {
+                            // 如果无法获取尺寸，使用默认的ScaleType
+                            Bitmap bitmap = BitmapFactory.decodeFile(playbackBgPath);
+                            if (bitmap != null) {
+                                backgroundImage.setImageBitmap(bitmap);
+                                backgroundImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                                backgroundImage.setAlpha(0.7f);
+                            }
+                        }
+                    });
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    // 如果加载失败，恢复默认背景
+                    backgroundImage.setImageResource(R.drawable.background);
+                    backgroundImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                }
+            } else {
+                // 恢复默认背景
+                backgroundImage.setImageResource(R.drawable.background);
+                backgroundImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            }
+        }
+    }
+
+    // 添加ImageView专用的图片缩放方法
+    private Bitmap createScaledBitmapForImageView(Bitmap originalBitmap, int targetWidth, int targetHeight) {
+        int originalWidth = originalBitmap.getWidth();
+        int originalHeight = originalBitmap.getHeight();
+
+        // 计算缩放比例
+        float scaleX = (float) targetWidth / originalWidth;
+        float scaleY = (float) targetHeight / originalHeight;
+        float scale = Math.max(scaleX, scaleY); // 使用较大的缩放比例保持宽高比
+
+        // 计算缩放后的尺寸
+        int scaledWidth = Math.round(originalWidth * scale);
+        int scaledHeight = Math.round(originalHeight * scale);
+
+        // 缩放图片
+        return Bitmap.createScaledBitmap(originalBitmap, scaledWidth, scaledHeight, true);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 每次返回时重新应用背景，以防用户更改了设置
+        applyPlaybackBackground();
     }
 
     @Override
@@ -1418,27 +1500,27 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         selectSong = Song.fromMap(map);
 
 
-            playSongAt(nextPos);
-            song = selectSong;
+        playSongAt(nextPos);
+        song = selectSong;
 
-            TextView currentSongTV = findViewById(R.id.currentSong);
-            currentSongTV.setText(selectSong.getName());
-            playBtn.setEnabled(true);
-            musicPlayer.setCurrentPositiontozero();
-            loadMusicCover(selectSong.getFilePath());
+        TextView currentSongTV = findViewById(R.id.currentSong);
+        currentSongTV.setText(selectSong.getName());
+        playBtn.setEnabled(true);
+        musicPlayer.setCurrentPositiontozero();
+        loadMusicCover(selectSong.getFilePath());
 
-            isResettingProgress = true;
-            progressBar.setMax(selectSong.getTimeDuration());
-            progressBar.setProgress(0);
-            preogress.setText("0");
-            playBtn.setText("暂停");
-            isResettingProgress = false;
+        isResettingProgress = true;
+        progressBar.setMax(selectSong.getTimeDuration());
+        progressBar.setProgress(0);
+        preogress.setText("0");
+        playBtn.setText("暂停");
+        isResettingProgress = false;
 
-            if (progressSyncThread != null && progressSyncThread.isAlive()) {
-                isProgressSyncRunning = false;
-                progressSyncThread.interrupt();
-            }
-            new Thread(new ProgressSync()).start();
+        if (progressSyncThread != null && progressSyncThread.isAlive()) {
+            isProgressSyncRunning = false;
+            progressSyncThread.interrupt();
+        }
+        new Thread(new ProgressSync()).start();
 
     }
 
