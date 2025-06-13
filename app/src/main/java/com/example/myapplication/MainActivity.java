@@ -9,6 +9,7 @@ import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.media.MediaMetadataRetriever;
 import android.media.MediaPlayer;
@@ -57,6 +58,7 @@ import com.example.myapplication.adapter.BatchModeAdapter;
 import com.example.myapplication.model.MusicViewModel;
 import com.example.myapplication.model.Playlist;
 import com.example.myapplication.model.Song;
+import com.example.myapplication.utils.ImageCacheManager;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -530,6 +532,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                 if (result != null) {
                                     String title = (String) result.get("title");
                                     File f = (File) result.get("file");
+                                    String coverUrl = (String) result.get("coverUrl");
                                     String path = f.getAbsolutePath();
 
                                     // 获取文件信息，用于转化成song
@@ -540,6 +543,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
                                     // 封装、添加到歌单
                                     Song newSong = new Song(duration, title, path, currentPlaylist);
+                                    newSong.setCoverUrl(coverUrl); // 设置封面URL
                                     addSongToPlaylist(newSong);
                                     MusicLoader.appendMusic(this, newSong);
                                     ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
@@ -565,6 +569,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                 if (result != null && !result.isEmpty()) {
                                     String title = (String) result.get("title");
                                     File f = (File) result.get("file");
+                                    String coverUrl = (String) result.get("coverUrl");
                                     String path = f.getAbsolutePath();
 
                                     // 获取文件信息，用于转化成song
@@ -575,6 +580,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
                                     // 封装、添加到歌单
                                     Song newSong = new Song(duration, title, path, currentPlaylist);
+                                    newSong.setCoverUrl(coverUrl); // 设置封面URL
                                     addSongToPlaylist(newSong);
                                     MusicLoader.appendMusic(this, newSong);
                                     ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
@@ -619,17 +625,19 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     }
 
     private void loadMusicCover(String musicFilePath) {
-        new Thread(() -> {
-            Bitmap coverBitmap = MusicCoverUtils.getCoverFromFile(musicFilePath, getApplicationContext());
-            runOnUiThread(() -> {
-                if (coverBitmap != null) {
-                    albumArt.setImageBitmap(coverBitmap);
-                } else {
-                    // 设置default曲绘
-                    albumArt.setImageResource(R.drawable.default_cover);
-                }
-            });
-        }).start();
+        // 获取当前歌曲的封面URL
+        String coverUrl = null;
+        if (selectSong != null) {
+            coverUrl = selectSong.getCoverUrl();
+        }
+        
+        // 使用智能加载方法
+        MusicCoverUtils.loadCoverSmart(musicFilePath, coverUrl, this, albumArt);
+    }
+
+    // 添加一个重载方法
+    private void loadMusicCover(String musicFilePath, String coverUrl) {
+        MusicCoverUtils.loadCoverSmart(musicFilePath, coverUrl, this, albumArt);
     }
 
     private String formatTime(int milliseconds) {
@@ -656,6 +664,10 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 }
             }
         }
+        
+        // 清理图片缓存
+        clearImageCache();
+        
         runOnUiThread(() -> {
             ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
             playBtn.setEnabled(false);
@@ -690,6 +702,19 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             listview.clearChoices();
             listview.requestLayout();
         });
+    }
+
+    // 添加缓存管理方法
+    private void showCacheInfo() {
+        ImageCacheManager cacheManager = ImageCacheManager.getInstance(this);
+        String info = cacheManager.getCacheInfo();
+        Toast.makeText(this, "缓存信息: " + info, Toast.LENGTH_LONG).show();
+    }
+
+    private void clearImageCache() {
+        ImageCacheManager cacheManager = ImageCacheManager.getInstance(this);
+        cacheManager.clearCache();
+        Toast.makeText(this, "图片缓存已清理", Toast.LENGTH_SHORT).show();
     }
 
     //字面意思
@@ -891,73 +916,96 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     private void applyPlaybackBackground() {
         SharedPreferences prefs = getSharedPreferences("background_prefs", MODE_PRIVATE);
         String playbackBgPath = prefs.getString("playback_background_path", null);
-        ImageView backgroundImage = findViewById(R.id.backgroundImage);
-        if (backgroundImage != null) {
+
+        // 使用DrawerLayout作为背景容器，与歌单页面保持一致
+        androidx.drawerlayout.widget.DrawerLayout drawerLayout = findViewById(R.id.drawer_layout);
+        if (drawerLayout != null) {
             if (playbackBgPath != null && new File(playbackBgPath).exists()) {
                 // 设置自定义背景
                 try {
-                    // 获取ImageView的尺寸
-                    backgroundImage.post(() -> {
-                        int viewWidth = backgroundImage.getWidth();
-                        int viewHeight = backgroundImage.getHeight();
+                    // 获取屏幕尺寸
+                    int screenWidth = getResources().getDisplayMetrics().widthPixels;
+                    int screenHeight = getResources().getDisplayMetrics().heightPixels;
 
-                        if (viewWidth > 0 && viewHeight > 0) {
-                            // 加载并缩放图片
-                            Bitmap originalBitmap = BitmapFactory.decodeFile(playbackBgPath);
-                            if (originalBitmap != null) {
-                                // 创建缩放后的位图
-                                Bitmap scaledBitmap = createScaledBitmapForImageView(originalBitmap, viewWidth, viewHeight);
+                    // 加载并缩放图片
+                    Bitmap originalBitmap = BitmapFactory.decodeFile(playbackBgPath);
+                    if (originalBitmap != null) {
+                        // 创建缩放后的位图，使用CENTER_CROP效果
+                        Bitmap scaledBitmap = createScaledBitmapForImageView(originalBitmap, screenWidth, screenHeight);
 
-                                // 设置到ImageView
-                                backgroundImage.setImageBitmap(scaledBitmap);
-                                backgroundImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                                backgroundImage.setAlpha(0.7f);
+                        // 创建背景drawable
+                        android.graphics.drawable.BitmapDrawable backgroundDrawable = new android.graphics.drawable.BitmapDrawable(getResources(), scaledBitmap);
+                        backgroundDrawable.setAlpha(180); // 设置透明度，保证文字可见
+                        drawerLayout.setBackground(backgroundDrawable);
 
-                                // 回收原始位图
-                                if (originalBitmap != scaledBitmap) {
-                                    originalBitmap.recycle();
-                                }
-                            }
-                        } else {
-                            // 如果无法获取尺寸，使用默认的ScaleType
-                            Bitmap bitmap = BitmapFactory.decodeFile(playbackBgPath);
-                            if (bitmap != null) {
-                                backgroundImage.setImageBitmap(bitmap);
-                                backgroundImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                                backgroundImage.setAlpha(0.7f);
-                            }
+                        // 回收原始位图
+                        if (originalBitmap != scaledBitmap) {
+                            originalBitmap.recycle();
                         }
-                    });
+                    }
                 } catch (Exception e) {
                     e.printStackTrace();
-                    // 如果加载失败，恢复默认背景
-                    backgroundImage.setImageResource(R.drawable.background);
-                    backgroundImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                    // 如果加载失败，设置系统主题背景
+                    setSystemThemeBackground(drawerLayout);
                 }
             } else {
-                // 恢复默认背景
-                backgroundImage.setImageResource(R.drawable.background);
-                backgroundImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                // 设置系统主题背景
+                setSystemThemeBackground(drawerLayout);
             }
         }
     }
 
-    // 添加ImageView专用的图片缩放方法
+    // 新增方法：设置系统主题背景
+    private void setSystemThemeBackground(View view) {
+        // 获取系统主题背景颜色
+        android.util.TypedValue typedValue = new android.util.TypedValue();
+        getTheme().resolveAttribute(android.R.attr.windowBackground, typedValue, true);
+
+        if (typedValue.type >= android.util.TypedValue.TYPE_FIRST_COLOR_INT &&
+                typedValue.type <= android.util.TypedValue.TYPE_LAST_COLOR_INT) {
+            // 如果是颜色值，直接使用
+            view.setBackgroundColor(typedValue.data);
+        } else {
+            // 如果是drawable资源，使用系统默认背景
+            view.setBackgroundResource(typedValue.resourceId);
+        }
+    }
+
+    // 图片缩放方法（重命名以适应新用途）
     private Bitmap createScaledBitmapForImageView(Bitmap originalBitmap, int targetWidth, int targetHeight) {
         int originalWidth = originalBitmap.getWidth();
         int originalHeight = originalBitmap.getHeight();
 
-        // 计算缩放比例
+        // 计算缩放比例，使用CENTER_CROP效果（保持宽高比，填满目标区域）
         float scaleX = (float) targetWidth / originalWidth;
         float scaleY = (float) targetHeight / originalHeight;
-        float scale = Math.max(scaleX, scaleY); // 使用较大的缩放比例保持宽高比
+        float scale = Math.max(scaleX, scaleY); // 选择较大的缩放比例
 
         // 计算缩放后的尺寸
         int scaledWidth = Math.round(originalWidth * scale);
         int scaledHeight = Math.round(originalHeight * scale);
 
         // 缩放图片
-        return Bitmap.createScaledBitmap(originalBitmap, scaledWidth, scaledHeight, true);
+        Bitmap scaledBitmap = Bitmap.createScaledBitmap(originalBitmap, scaledWidth, scaledHeight, true);
+
+        // 如果缩放后的图片大于目标尺寸，进行裁剪（居中裁剪）
+        if (scaledWidth > targetWidth || scaledHeight > targetHeight) {
+            int x = Math.max(0, (scaledWidth - targetWidth) / 2);
+            int y = Math.max(0, (scaledHeight - targetHeight) / 2);
+
+            Bitmap croppedBitmap = Bitmap.createBitmap(scaledBitmap, x, y,
+                    Math.min(targetWidth, scaledWidth),
+                    Math.min(targetHeight, scaledHeight));
+
+            // 回收缩放后的位图
+            if (scaledBitmap != croppedBitmap) {
+                scaledBitmap.recycle();
+            }
+
+            return croppedBitmap;
+        }
+
+        return scaledBitmap;
     }
 
     @Override
@@ -1907,43 +1955,16 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                         out.write(buffer, 0, len);
                                     }
 
-                                    // 不好实现，弃了
-//                                    // 下载封面图片
-//                                    Request coverRequest = new Request.Builder()
-//                                            .url(coverUrl) // 封面 URL
-//                                            .build();
-//
-//                                    client.newCall(coverRequest).enqueue(new Callback() {
-//                                        @Override
-//                                        public void onFailure(@NonNull Call call, @NonNull IOException e) {
-//                                            Log.e("BiliMusic", "封面下载失败: " + e.getMessage());
-//                                        }
-//
-//                                        @Override
-//                                        public void onResponse(@NonNull Call call, @NonNull Response response) {
-//                                            // 这个也存cache里，到时候会一起删
-//                                            File coverFile = new File(context.getExternalFilesDir("cache"), bv + ".jpg");
-//                                            try (InputStream coverIn = response.body().byteStream();
-//                                                 FileOutputStream coverOut = new FileOutputStream(coverFile)) {
-//                                                byte[] coverBuffer = new byte[4096];
-//                                                int coverLen;
-//                                                while ((coverLen = coverIn.read(coverBuffer)) != -1) {
-//                                                    coverOut.write(coverBuffer, 0, coverLen);
-//                                                }
-//
-//                                                // 嵌入封面到音频文件，新路径在audio下
-//                                                // embedCoverToAudio(audioFile, coverFile);
-//                                            } catch (IOException e) {
-//                                                Log.e("BiliMusic", "封面保存失败: ", e);
-//                                            }
-//                                        }
-//                                    });
+                                    // 预加载封面到缓存
+                                    if (coverUrl != null && !coverUrl.isEmpty()) {
+                                        MusicCoverUtils.preloadCover(coverUrl, context);
+                                    }
 
-                                    // 把东西放一起返回
+                                    // 把东西放一起返回，包括封面URL
                                     Map<String, Object> result = new HashMap<>();
-                                    // File file = new File(context.getExternalFilesDir("audio"), bv + ".mp3");
                                     result.put("file", audioFile);
                                     result.put("title", title);
+                                    result.put("coverUrl", coverUrl); // 添加封面URL
 
                                     callback.onResult(result);
                                 } catch (IOException e) {

@@ -12,7 +12,7 @@ public class Song {
     private int timeDuration;
     private final String filePath; // 字段文件路径
     private int playCount = 0; // 播放次数字段
-
+    private String coverUrl; // 添加封面URL字段
 
     public Song(int timeDuration, String name, String filePath, int playCount, String playlist) {
         this.timeDuration = timeDuration;
@@ -74,6 +74,15 @@ public class Song {
         return timeDuration;
     }
 
+    // 添加封面URL的getter和setter
+    public String getCoverUrl() {
+        return coverUrl;
+    }
+
+    public void setCoverUrl(String coverUrl) {
+        this.coverUrl = coverUrl;
+    }
+
     public Map<String, Object> toMap(int index) {
         Map<String, Object> map = new HashMap<>();
         map.put("playlist", playlist);
@@ -83,6 +92,7 @@ public class Song {
         map.put("filePath", filePath);
         map.put("playCount", playCount);
         map.put("onlineSongId", onlineSongId);
+        map.put("coverUrl", coverUrl); // 添加封面URL到Map
         map.put("isSelected", false);
         return map;
     }
@@ -121,11 +131,14 @@ public class Song {
         String formattedTime = (String) map.get("TimeDuration");
         String filePath = (String) map.get("filePath");
         int timeDuration = parseTime(formattedTime);
-        int playCount = (int) map.getOrDefault("playCount", 0); //
+        int playCount = (int) map.getOrDefault("playCount", 0);
         String onlineId = (String) map.get("onlineSongId");
+        String coverUrl = (String) map.get("coverUrl"); // 获取封面URL
+        
         Song song = new Song(timeDuration, name, filePath, playlist);
         song.setPlayCount(playCount);
         song.setOnlineSongId(onlineId);
+        song.setCoverUrl(coverUrl); // 设置封面URL
         return song;
     }
 }
