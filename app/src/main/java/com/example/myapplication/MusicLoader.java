@@ -49,29 +49,36 @@ public class MusicLoader {
             int index = 1;
             while ((line = reader.readLine()) != null) {
                 String[] parts = line.split(",");
-                if (parts.length >= 4) {
-                    String playlist = parts[0].trim(); // 新增歌单字段
+                if (parts.length >= 4) { // 至少需要4个部分：playlist, duration, name, filePath
+                    String playlist = parts[0].trim();
                     int duration = Integer.parseInt(parts[1].trim());
                     String name = parts[2].trim();
                     String uriString = parts[3].trim();
-                    // 仅加载目标歌单的歌曲
+                    // 检查是否有第五个部分（coverUrl），如果没有则默认为空字符串
+                    String coverUrl = parts.length >= 5 ? parts[4].trim() : "";
+
                     if (playlist.equals(targetPlaylist)) {
                         Song song = new Song(duration, name, uriString, playlist);
+                        song.setCoverUrl(coverUrl); // 设置读取到的 coverUrl
                         list.add(song.toMap(index++));
                     }
                 }
             }
-        } catch (IOException | NumberFormatException e) { /* 错误处理 */ }
+        } catch (IOException | NumberFormatException e) {
+            Log.e(TAG, "加载歌曲列表失败: " + e.getMessage()); // 添加日志记录
+        }
         return list;
     }
 
     public static void appendMusic(Context context, Song song) {
         File file = getMusicFile(context);
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(file, true))) {
-            String line = song.getPlaylist() + "," + song.getRawDuration() + "," + song.getName() + "," + song.getFilePath();
+            String coverUrl = song.getCoverUrl() != null ? song.getCoverUrl() : ""; // 获取 coverUrl，如果为 null 则为空字符串
+            // 将 coverUrl 添加到要写入的行中
+            String line = song.getPlaylist() + "," + song.getRawDuration() + "," + song.getName() + "," + song.getFilePath() + "," + coverUrl;
             bw.write(line);
             bw.newLine();
-            bw.flush(); // 强制把缓冲区的内容写入
+            bw.flush();
         } catch (IOException e) {
             Log.e(TAG, "写入失败: " + e.getMessage());
         }

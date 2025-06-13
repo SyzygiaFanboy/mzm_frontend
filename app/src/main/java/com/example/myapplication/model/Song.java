@@ -134,7 +134,7 @@ public class Song {
         int playCount = (int) map.getOrDefault("playCount", 0);
         String onlineId = (String) map.get("onlineSongId");
         String coverUrl = (String) map.get("coverUrl"); // 获取封面URL
-        
+
         Song song = new Song(timeDuration, name, filePath, playlist);
         song.setPlayCount(playCount);
         song.setOnlineSongId(onlineId);

@@ -545,8 +545,10 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                     Song newSong = new Song(duration, title, path, currentPlaylist);
                                     newSong.setCoverUrl(coverUrl); // 设置封面URL
                                     addSongToPlaylist(newSong);
+                                    updatePlaylistCover(currentPlaylist);
                                     MusicLoader.appendMusic(this, newSong);
                                     ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
+                                    updateNavButtons(); // 添加这行来启用按钮
                                     Toast.makeText(MainActivity.this, "已添加到歌单", Toast.LENGTH_SHORT).show();
                                 } else {
                                     Toast.makeText(MainActivity.this, "获取B站音乐失败", Toast.LENGTH_SHORT).show();
@@ -582,8 +584,10 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                     Song newSong = new Song(duration, title, path, currentPlaylist);
                                     newSong.setCoverUrl(coverUrl); // 设置封面URL
                                     addSongToPlaylist(newSong);
+                                    updatePlaylistCover(currentPlaylist);
                                     MusicLoader.appendMusic(this, newSong);
                                     ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
+                                    updateNavButtons(); // 添加这行来启用按钮
                                     Toast.makeText(MainActivity.this, "已添加到歌单", Toast.LENGTH_SHORT).show();
                                 } else {
                                     Toast.makeText(MainActivity.this, "获取B站音乐失败", Toast.LENGTH_SHORT).show();
@@ -630,7 +634,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         if (selectSong != null) {
             coverUrl = selectSong.getCoverUrl();
         }
-        
+
         // 使用智能加载方法
         MusicCoverUtils.loadCoverSmart(musicFilePath, coverUrl, this, albumArt);
     }
@@ -664,10 +668,10 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 }
             }
         }
-        
+
         // 清理图片缓存
         clearImageCache();
-        
+
         runOnUiThread(() -> {
             ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
             playBtn.setEnabled(false);
@@ -1217,13 +1221,9 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
     private void updatePlaylistCover(String playlistName) {
         new Thread(() -> {
-            String latestCoverPath = MusicLoader.getLatestCoverForPlaylist(
-                    MainActivity.this, playlistName);
-
-            SharedPreferences prefs = getSharedPreferences(
-                    PlaylistListActivity.PREFS, MODE_PRIVATE);
-            String playlistsJson = prefs.getString(
-                    PlaylistListActivity.KEY_PLAYLISTS, null);
+            String latestCoverPath = MusicLoader.getLatestCoverForPlaylist(MainActivity.this, playlistName);
+            SharedPreferences prefs = getSharedPreferences(PlaylistListActivity.PREFS, MODE_PRIVATE);
+            String playlistsJson = prefs.getString(PlaylistListActivity.KEY_PLAYLISTS, null);
             if (latestCoverPath == null) {
                 latestCoverPath = ""; // 避免 null
             }
@@ -1231,19 +1231,35 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 List<Playlist> playlists = Playlist.fromJson(playlistsJson);
                 for (Playlist playlist : playlists) {
                     if (playlist.getName() != null && playlist.getName().equals(playlistName)) {
-                        playlist.setLatestCoverPath(latestCoverPath);
+                        Song song = null;
+                        if (!musicList.isEmpty()) {
+                            Map<String, Object> lastSongMap = musicList.get(musicList.size() - 1);
+                            song = Song.fromMap(lastSongMap);
+                        }
+                        if (song != null && song.getCoverUrl() != null) {
+                            String localCoverPath = MusicCoverUtils.downloadAndCacheCover(song.getCoverUrl(), MainActivity.this);
+                            if (localCoverPath != null && !localCoverPath.isEmpty()) {
+                                playlist.setLatestCoverPath(localCoverPath);
+                                Log.d("MainActivity", "写入本地封面路径: " + localCoverPath);
+                            } else {
+                                playlist.setLatestCoverPath(song.getCoverUrl());
+                                Log.d("MainActivity", "写入网络封面路径: " + song.getCoverUrl());
+                            }
+                            MusicCoverUtils.preloadCover(song.getCoverUrl(), MainActivity.this);
+                        } else {
+                            playlist.setLatestCoverPath(latestCoverPath);
+                            Log.d("MainActivity", "写入默认封面路径: " + latestCoverPath);
+                        }
                         break;
                     }
                 }
                 // 保存更新后的歌单列表
                 String updatedJson = Playlist.toJson(playlists);
-                prefs.edit().putString(
-                        PlaylistListActivity.KEY_PLAYLISTS, updatedJson).apply();
+                prefs.edit().putString(PlaylistListActivity.KEY_PLAYLISTS, updatedJson).apply();
                 Log.d("MainActivity", "最新封面路径为: " + latestCoverPath);
                 Log.d("MainActivity", "更新并保存封面成功: " + playlistName);
             }
         }).start();
-
     }
 
     //删除音乐，注意只是删除按钮的逻辑，复选框逻辑在初始化那块写了，闲得无聊可以合并一下

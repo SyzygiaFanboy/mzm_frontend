@@ -8,7 +8,8 @@ import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.util.Log;
 import android.widget.ImageView;
-
+import java.io.File;
+import java.io.FileOutputStream;
 import com.example.myapplication.utils.ImageCacheManager;
 
 import java.io.IOException;
@@ -22,7 +23,7 @@ import okhttp3.Response;
 
 public class MusicCoverUtils {
     private static final String TAG = "MusicCoverUtils";
-    
+
     /**
      * 从音频文件获取嵌入的封面
      */
@@ -53,7 +54,7 @@ public class MusicCoverUtils {
         }
         return null;
     }
-    
+
     /**
      * 从URL加载封面图片（带缓存）
      */
@@ -62,16 +63,16 @@ public class MusicCoverUtils {
             imageView.setImageResource(R.drawable.default_cover);
             return;
         }
-        
+
         ImageCacheManager cacheManager = ImageCacheManager.getInstance(context);
-        
+
         // 先检查缓存
         Bitmap cachedBitmap = cacheManager.getBitmap(coverUrl);
         if (cachedBitmap != null) {
             imageView.setImageBitmap(cachedBitmap);
             return;
         }
-        
+
         // 缓存中没有，从网络下载
         new Thread(() -> {
             try {
@@ -81,16 +82,16 @@ public class MusicCoverUtils {
                         .addHeader("User-Agent", "Mozilla/5.0")
                         .addHeader("Referer", "https://www.bilibili.com/")
                         .build();
-                
+
                 Response response = client.newCall(request).execute();
                 if (response.isSuccessful() && response.body() != null) {
                     InputStream inputStream = response.body().byteStream();
                     Bitmap bitmap = BitmapFactory.decodeStream(inputStream);
-                    
+
                     if (bitmap != null) {
                         // 保存到缓存
                         cacheManager.putBitmap(coverUrl, bitmap);
-                        
+
                         // 更新UI
                         ((Activity) context).runOnUiThread(() -> {
                             imageView.setImageBitmap(bitmap);
@@ -114,7 +115,7 @@ public class MusicCoverUtils {
             }
         }).start();
     }
-    
+
     /**
      * 智能加载封面：优先从文件嵌入的封面加载，如果没有则从URL加载
      */
@@ -122,7 +123,7 @@ public class MusicCoverUtils {
         new Thread(() -> {
             // 首先尝试从音频文件中获取嵌入的封面
             Bitmap coverBitmap = getCoverFromFile(musicFilePath, context);
-            
+
             if (coverBitmap != null) {
                 // 如果音频文件中有封面，直接使用
                 ((Activity) context).runOnUiThread(() -> {
@@ -136,7 +137,38 @@ public class MusicCoverUtils {
             }
         }).start();
     }
-    
+
+    public static String downloadAndCacheCover(String coverUrl, Context context) {
+        if (coverUrl == null || coverUrl.isEmpty()) return null;
+        try {
+            OkHttpClient client = new OkHttpClient();
+            Request request = new Request.Builder()
+                    .url(coverUrl)
+                    .addHeader("User-Agent", "Mozilla/5.0")
+                    .addHeader("Referer", "https://www.bilibili.com/")
+                    .build();
+            Response response = client.newCall(request).execute();
+            if (response.isSuccessful() && response.body() != null) {
+                InputStream inputStream = response.body().byteStream();
+                Bitmap bitmap = BitmapFactory.decodeStream(inputStream);
+                if (bitmap != null) {
+                    // 生成本地文件名
+                    String fileName = "cover_" + coverUrl.hashCode() + ".jpg";
+                    File coverFile = new File(context.getFilesDir(), fileName);
+                    FileOutputStream fos = new FileOutputStream(coverFile);
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 90, fos);
+                    fos.close();
+                    response.close();
+                    return coverFile.getAbsolutePath();
+                }
+                response.close();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "下载并缓存封面失败: " + e.getMessage());
+        }
+        return null;
+    }
+
     /**
      * 预加载封面到缓存
      */
@@ -144,14 +176,14 @@ public class MusicCoverUtils {
         if (coverUrl == null || coverUrl.isEmpty()) {
             return;
         }
-        
+
         ImageCacheManager cacheManager = ImageCacheManager.getInstance(context);
-        
+
         // 如果已经缓存，直接返回
         if (cacheManager.getBitmap(coverUrl) != null) {
             return;
         }
-        
+
         // 后台下载并缓存
         new Thread(() -> {
             try {
@@ -161,12 +193,12 @@ public class MusicCoverUtils {
                         .addHeader("User-Agent", "Mozilla/5.0")
                         .addHeader("Referer", "https://www.bilibili.com/")
                         .build();
-                
+
                 Response response = client.newCall(request).execute();
                 if (response.isSuccessful() && response.body() != null) {
                     InputStream inputStream = response.body().byteStream();
                     Bitmap bitmap = BitmapFactory.decodeStream(inputStream);
-                    
+
                     if (bitmap != null) {
                         cacheManager.putBitmap(coverUrl, bitmap);
                         Log.d(TAG, "封面预加载完成: " + coverUrl);
