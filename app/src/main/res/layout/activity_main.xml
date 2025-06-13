@@ -26,16 +26,16 @@
             app:navigationIcon="@drawable/ic_arrow_back"/>
 
         <!-- 背景图 -->
-        <ImageView
-            android:id="@+id/backgroundImage"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:alpha="0.65"
-            android:contentDescription="背景图"
-            android:scaleType="centerCrop"
-            android:src="@drawable/background"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
+        <!--        <ImageView-->
+        <!--            android:id="@+id/backgroundImage"-->
+        <!--            android:layout_width="match_parent"-->
+        <!--            android:layout_height="match_parent"-->
+        <!--            android:alpha="0.65"-->
+        <!--            android:contentDescription="背景图"-->
+        <!--            android:scaleType="centerCrop"-->
+        <!--            android:src="@drawable/background"-->
+        <!--            app:layout_constraintStart_toStartOf="parent"-->
+        <!--            app:layout_constraintTop_toTopOf="parent" />-->
 
         <!-- 专辑封面区域 -->
         <ImageView
