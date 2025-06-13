@@ -66,10 +66,14 @@ import com.google.gson.JsonParser;
 
 import android.widget.Button;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.*;
@@ -814,6 +818,11 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         listview.setItemChecked(selectedPosition, true);
         listview.smoothScrollToPosition(selectedPosition);
         updatePersistentStorage();
+//        if (selectedPosition >= 0 && selectedPosition < musicList.size()) {
+//            Map<String, Object> selectedSongMap = musicList.get(selectedPosition);
+//            selectSong = Song.fromMap(selectedSongMap);  // 更新成员变量
+//            loadMusicCover(selectSong.getFilePath());
+//        }
     }
 
     private void moveSongDown(int position) {
@@ -839,6 +848,11 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
         // 如果需要更新持久化存储中的数据，可以在这里同步更新文件内容
         updatePersistentStorage();
+//        if (selectedPosition >= 0 && selectedPosition < musicList.size()) {
+//            Map<String, Object> selectedSongMap = musicList.get(selectedPosition);
+//            selectSong = Song.fromMap(selectedSongMap);  // 更新成员变量
+//            loadMusicCover(selectSong.getFilePath());
+//        }
     }
 
     // 遍历 musicList 更新每项的 index
@@ -868,9 +882,15 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 String name = (String) item.get("name");
                 String formattedTime = (String) item.get("TimeDuration");
                 String filePath = (String) item.get("filePath");
+                String coverUrl = (String) item.get("coverUrl"); // coverUrlを取得
                 int duration = Song.parseTime(formattedTime);
 
-                String line = playlist + "," + duration + "," + name + "," + filePath;
+                // coverUrlがnullの場合は空文字列を使用
+                if (coverUrl == null) {
+                    coverUrl = "";
+                }
+
+                String line = playlist + "," + duration + "," + name + "," + filePath + "," + coverUrl;
                 kept.add(line);
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -1221,45 +1241,95 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
     private void updatePlaylistCover(String playlistName) {
         new Thread(() -> {
-            String latestCoverPath = MusicLoader.getLatestCoverForPlaylist(MainActivity.this, playlistName);
-            SharedPreferences prefs = getSharedPreferences(PlaylistListActivity.PREFS, MODE_PRIVATE);
-            String playlistsJson = prefs.getString(PlaylistListActivity.KEY_PLAYLISTS, null);
-            if (latestCoverPath == null) {
-                latestCoverPath = ""; // 避免 null
-            }
-            if (playlistsJson != null) {
-                List<Playlist> playlists = Playlist.fromJson(playlistsJson);
-                for (Playlist playlist : playlists) {
-                    if (playlist.getName() != null && playlist.getName().equals(playlistName)) {
-                        Song song = null;
-                        if (!musicList.isEmpty()) {
-                            Map<String, Object> lastSongMap = musicList.get(musicList.size() - 1);
-                            song = Song.fromMap(lastSongMap);
-                        }
-                        if (song != null && song.getCoverUrl() != null) {
-                            String localCoverPath = MusicCoverUtils.downloadAndCacheCover(song.getCoverUrl(), MainActivity.this);
-                            if (localCoverPath != null && !localCoverPath.isEmpty()) {
-                                playlist.setLatestCoverPath(localCoverPath);
-                                Log.d("MainActivity", "写入本地封面路径: " + localCoverPath);
-                            } else {
-                                playlist.setLatestCoverPath(song.getCoverUrl());
-                                Log.d("MainActivity", "写入网络封面路径: " + song.getCoverUrl());
-                            }
-                            MusicCoverUtils.preloadCover(song.getCoverUrl(), MainActivity.this);
-                        } else {
-                            playlist.setLatestCoverPath(latestCoverPath);
-                            Log.d("MainActivity", "写入默认封面路径: " + latestCoverPath);
-                        }
-                        break;
-                    }
+            try {
+                // 获取歌单中最后一首歌的信息
+                String lastSongInfo = getLastSongInPlaylist(playlistName);
+                if (lastSongInfo == null) {
+                    // 如果没有歌曲，直接发送广播让界面刷新
+                    sendPlaylistCoverUpdateBroadcast(playlistName);
+                    return;
                 }
-                // 保存更新后的歌单列表
-                String updatedJson = Playlist.toJson(playlists);
-                prefs.edit().putString(PlaylistListActivity.KEY_PLAYLISTS, updatedJson).apply();
-                Log.d("MainActivity", "最新封面路径为: " + latestCoverPath);
-                Log.d("MainActivity", "更新并保存封面成功: " + playlistName);
+
+                String[] parts = lastSongInfo.split(",", 5);
+                if (parts.length < 5) {
+                    sendPlaylistCoverUpdateBroadcast(playlistName);
+                    return;
+                }
+
+                String songName = parts[2].trim();
+                String coverUrl = parts[4].trim();
+
+                if (coverUrl != null && !coverUrl.isEmpty() && !coverUrl.equals("null") && !coverUrl.equals("")) {
+                    // 为每首歌生成唯一的缓存文件名（基于歌曲名和URL的hash）
+                    String cacheFileName = "cover_" + Math.abs((songName + coverUrl).hashCode()) + ".jpg";
+                    File cacheFile = new File(getFilesDir(), cacheFileName);
+
+                    // 如果缓存文件不存在，下载并缓存
+                    if (!cacheFile.exists()) {
+                        try {
+                            java.net.URL url = new java.net.URL(coverUrl);
+                            java.net.HttpURLConnection connection = (java.net.HttpURLConnection) url.openConnection();
+                            connection.setDoInput(true);
+                            connection.connect();
+                            InputStream input = connection.getInputStream();
+
+                            FileOutputStream output = new FileOutputStream(cacheFile);
+                            byte[] buffer = new byte[1024];
+                            int bytesRead;
+                            while ((bytesRead = input.read(buffer)) != -1) {
+                                output.write(buffer, 0, bytesRead);
+                            }
+                            output.close();
+                            input.close();
+
+                            Log.d(TAG, "Bilibili音乐封面缓存成功: " + cacheFile.getAbsolutePath());
+                        } catch (Exception e) {
+                            Log.e(TAG, "下载Bilibili音乐封面失败: " + e.getMessage());
+                        }
+                    }
+
+                    // 下载完成后发送广播通知界面刷新
+                    sendPlaylistCoverUpdateBroadcast(playlistName);
+                } else {
+                    // 没有coverUrl，直接发送广播让界面刷新
+                    sendPlaylistCoverUpdateBroadcast(playlistName);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "更新歌单封面失败: " + e.getMessage());
+                sendPlaylistCoverUpdateBroadcast(playlistName);
             }
         }).start();
+    }
+
+    // 新增方法：发送歌单封面更新广播
+    private void sendPlaylistCoverUpdateBroadcast(String playlistName) {
+        runOnUiThread(() -> {
+            Intent intent = new Intent("PLAYLIST_COVER_UPDATED");
+            intent.putExtra("playlistName", playlistName);
+            sendBroadcast(intent);
+            Log.d(TAG, "发送歌单封面更新广播: " + playlistName);
+        });
+    }
+    private String getLastSongInPlaylist(String playlistName) {
+        try {
+            File file = MusicLoader.getMusicFile(this);
+            if (!file.exists()) return null;
+
+            String lastSong = null;
+            java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(file));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split(",", 2);
+                if (parts.length >= 2 && parts[0].trim().equals(playlistName)) {
+                    lastSong = line;
+                }
+            }
+            reader.close();
+            return lastSong;
+        } catch (Exception e) {
+            Log.e(TAG, "获取最后一首歌失败: " + e.getMessage());
+            return null;
+        }
     }
 
     //删除音乐，注意只是删除按钮的逻辑，复选框逻辑在初始化那块写了，闲得无聊可以合并一下
