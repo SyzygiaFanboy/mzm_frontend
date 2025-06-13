@@ -122,33 +122,53 @@ public class MusicLoader {
         File file = getMusicFile(context);
         if (!file.exists()) return null;
 
-        String latestCoverPath = null;
-        long latestTime = 0;
+        String lastSongInfo = null;
         try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
             String line;
             while ((line = reader.readLine()) != null) {
-                Log.d("MusicLoader", "Line: " + line);
-                String[] parts = line.split(",");
-                if (parts.length >= 4 && parts[0].trim().equals(playlistName)) {
-                    String filePath = parts[3].trim();
-                    Uri uri = Uri.parse(filePath);
-                    try (InputStream input = context.getContentResolver().openInputStream(uri)) {
-                        if (input != null) {
-                            long lastModified = System.currentTimeMillis(); // 无法直接获取，只能用当前时间
-                            if (lastModified > latestTime) {
-                                latestTime = lastModified;
-                                latestCoverPath = filePath;
-                            }
-                        }
-                    } catch (Exception e) {
-                        Log.e(TAG, "无法读取 URI: " + filePath + " 错误：" + e.getMessage());
-                    }
-
+                String[] parts = line.split(",", 2);
+                if (parts.length >= 2 && parts[0].trim().equals(playlistName)) {
+                    lastSongInfo = line; // 保存最后一首歌的信息
                 }
             }
         } catch (IOException e) {
-            Log.e(TAG, "获取最新封面失败: " + e.getMessage());
+            Log.e(TAG, "读取歌单文件失败: " + e.getMessage());
+            return null;
         }
-        return latestCoverPath;
+
+        if (lastSongInfo == null) {
+            Log.d(TAG, "歌单 " + playlistName + " 中没有歌曲");
+            return null;
+        }
+
+        // 解析最后一首歌的信息
+        String[] parts = lastSongInfo.split(",", 5);
+        if (parts.length < 5) {
+            Log.d(TAG, "歌曲信息格式不正确: " + lastSongInfo);
+            return null;
+        }
+
+        String songName = parts[2].trim();
+        String filePath = parts[3].trim();
+        String coverUrl = parts[4].trim();
+
+        // 如果最后一首歌是Bilibili音乐（有coverUrl）
+        if (coverUrl != null && !coverUrl.isEmpty() && !coverUrl.equals("null")) {
+            // 生成对应的缓存文件名
+            String cacheFileName = "cover_" + Math.abs((songName + coverUrl).hashCode()) + ".jpg";
+            File cacheFile = new File(context.getFilesDir(), cacheFileName);
+
+            if (cacheFile.exists()) {
+                Log.d(TAG, "找到歌单 " + playlistName + " 最后一首歌的缓存封面: " + cacheFile.getAbsolutePath());
+                return cacheFile.getAbsolutePath();
+            } else {
+                Log.d(TAG, "歌单 " + playlistName + " 最后一首歌的缓存封面不存在，返回网络URL: " + coverUrl);
+                return coverUrl; // 返回网络URL作为备选
+            }
+        } else {
+            // 如果最后一首歌是本地音乐，返回文件路径用于提取嵌入封面
+            Log.d(TAG, "歌单 " + playlistName + " 最后一首歌是本地音乐: " + filePath);
+            return filePath;
+        }
     }
 }

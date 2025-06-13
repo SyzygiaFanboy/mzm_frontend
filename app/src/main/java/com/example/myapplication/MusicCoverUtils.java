@@ -28,6 +28,19 @@ public class MusicCoverUtils {
      * 从音频文件获取嵌入的封面
      */
     public static Bitmap getCoverFromFile(String filePath, Context context) {
+        // 如果是图片文件，直接加载
+        if (filePath != null && (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg") || filePath.endsWith(".png"))) {
+            try {
+                File imageFile = new File(filePath);
+                if (imageFile.exists()) {
+                    return BitmapFactory.decodeFile(filePath);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "加载图片文件失败: " + e.getMessage());
+            }
+        }
+
+        // 原有的音频文件封面提取逻辑
         MediaMetadataRetriever retriever = new MediaMetadataRetriever();
         try {
             if (filePath.startsWith("content://")) {

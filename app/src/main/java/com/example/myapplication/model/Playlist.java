@@ -32,6 +32,9 @@ public class Playlist {
         this.latestCoverPath = null;
     }
 
+//    public Playlist(String name) {
+//    }
+
     public String getName() {
         return name;
     }
