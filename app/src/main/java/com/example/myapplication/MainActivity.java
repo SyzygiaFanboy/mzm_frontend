@@ -9,8 +9,6 @@ import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.drawable.BitmapDrawable;
-import android.graphics.drawable.Drawable;
 import android.media.MediaMetadataRetriever;
 import android.media.MediaPlayer;
 import android.net.Uri;
@@ -44,11 +42,9 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.app.AlertDialog;
-import android.content.DialogInterface;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
-import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -526,7 +522,15 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                         if (bv == null) {
                             return;
                         }
+
                         try {
+                            // 进度对话框
+                            runOnUiThread(() -> {
+                                showProgressDialog();
+                                dialogProgressBar.setIndeterminate(true); // 设置为不确定进度模式
+                                dialogMessage.setText("正在获取B站音频...");
+                            });
+
                             // 获取音频流函数
                             getBiliMusic(bv, this, result -> runOnUiThread(() -> {
                                 if (result != null) {
@@ -554,18 +558,34 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                     Toast.makeText(MainActivity.this, "获取B站音乐失败", Toast.LENGTH_SHORT).show();
                                     Log.e("BiliMusic", "获取B站音乐失败，bv: " + bv);
                                 }
+                                dismissProgressDialog();
                             }));
                         } catch (Exception e) {
-                            Toast.makeText(MainActivity.this, "无效的BV号：" + bv, Toast.LENGTH_SHORT).show();
+                            runOnUiThread(this::dismissProgressDialog);
+                            Toast.makeText(MainActivity.this, "无效的输入：" + bv, Toast.LENGTH_SHORT).show();
                         }
                     });
                 } else if (which == 2) {
                     // 添加B站收藏夹音乐
                     showBiliCollectionDialog(list -> runOnUiThread(() -> {
-                        if (list == null || list.isEmpty()) {
+                        if (list == null) {
+                            return;
+                        }
+                        if (list.isEmpty()) {
                             Toast.makeText(MainActivity.this, "未获取到收藏夹信息", Toast.LENGTH_SHORT).show();
                             return;
                         }
+
+                        // 进度对话框
+                        AtomicInteger successCnt = new AtomicInteger();
+                        AtomicInteger failCnt = new AtomicInteger();
+                        runOnUiThread(() -> {
+                            showProgressDialog();
+                            dialogProgressBar.setIndeterminate(false); // 设置为确定进度模式
+                            dialogProgressBar.setProgress(0);
+                            dialogMessage.setText("正在获取B站音频...");
+                        });
+
                         for (String bv : list) {
                             getBiliMusic(bv, this, result -> runOnUiThread(() -> {
                                 if (result != null && !result.isEmpty()) {
@@ -588,12 +608,30 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                     MusicLoader.appendMusic(this, newSong);
                                     ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
                                     updateNavButtons(); // 添加这行来启用按钮
-                                    Toast.makeText(MainActivity.this, "已添加到歌单", Toast.LENGTH_SHORT).show();
+
+                                    // 更新进度条
+                                    successCnt.getAndIncrement();
+                                    int progress = successCnt.get() * 100 / list.size();
+                                    dialogProgressBar.setProgress(progress);
+                                    dialogMessage.setText("正在获取B站音频... (" + successCnt.get() + "/" + list.size() + ")");
                                 } else {
+                                    failCnt.getAndIncrement();
+                                    dismissProgressDialog();
                                     Toast.makeText(MainActivity.this, "获取B站音乐失败", Toast.LENGTH_SHORT).show();
-                                    Log.e("BiliCollection", "获取B站音乐失败，bv: " + bv);
+                                    Log.e("BiliCollection", "返回值为空，bv: " + bv);
+                                }
+
+                                // 放在回调里面，不然显示不出来
+                                if (successCnt.get() >= list.size()) {
+                                    dismissProgressDialog();
+                                    Toast.makeText(MainActivity.this, "已添加到歌单", Toast.LENGTH_SHORT).show();
                                 }
                             }));
+                            // 检查是否已经失败并退出
+                            if (failCnt.get()>0) {
+                                runOnUiThread(this::dismissProgressDialog);
+                                break;
+                            }
                         }
                     }));
                 }
@@ -1286,7 +1324,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             if (deletedSong.equals(currentSong)) {
                 musicPlayer.stop();
                 progressBar.setProgress(0);
-                preogress.setText("0");
+                preogress.setText("请选择歌曲");
                 isCurrentSongDeleted = true;
                 playBtn.setEnabled(false);
             }
@@ -1308,7 +1346,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     runOnUiThread(() -> {
                         progressBar.setMax(totalDuration);
                         progressBar.setProgress(currentPos);
-                        preogress.setText(formatTime(currentPos) + "/" + formatTime(totalDuration));
+                        preogress.setText(formatTime(currentPos) + " / " + formatTime(totalDuration));
                     });
                 }
             });
@@ -1317,7 +1355,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             musicPlayer.resetProgress();
             runOnUiThread(() -> {
                 progressBar.setProgress(0);
-                preogress.setText("00:00");
+                preogress.setText("请选择歌曲");
                 albumArt.setImageResource(R.drawable.default_cover);
                 TextView currentSongTV = findViewById(R.id.currentSong);
                 currentSongTV.setText("当前播放：暂无歌曲");
@@ -1371,7 +1409,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 // 更新进度条逻辑
                 progressBar.setMax(totalDuration);
                 progressBar.setProgress(currentPosition);
-                preogress.setText(formatTime(currentPosition) + "/" + formatTime(totalDuration));
+                preogress.setText(formatTime(currentPosition) + " / " + formatTime(totalDuration));
             }));
             runOnUiThread(() -> {
                 listview.clearChoices();
@@ -1384,7 +1422,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             TextView currentSongTV = findViewById(R.id.currentSong);
             playBtn.setEnabled(false);
             progressBar.setProgress(0);
-            preogress.setText("0");
+            preogress.setText("请选择歌曲");
             musicPlayer.setCurrentPositiontozero();
             btnPrevious.setEnabled(false);
             btnNext.setEnabled(false);
@@ -1407,25 +1445,16 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         TextView message = new TextView(this);
         message.setText("确定要删除这首歌曲吗？");
         message.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        message.setTextColor(ContextCompat.getColor(this, android.R.color.black));
         layout.addView(message);
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("确认删除")
                 .setView(layout) // 设置动态创建的布局
-                .setPositiveButton("确定", new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int which) {
-                        deleteSelectedSong(selectedPosition); // 传递复选框状态
-                        dialog.dismiss();
-                    }
+                .setPositiveButton("确定", (dialog, which) -> {
+                    deleteSelectedSong(selectedPosition); // 传递复选框状态
+                    dialog.dismiss();
                 })
-                .setNegativeButton("取消", new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int which) {
-                        dialog.dismiss();
-                    }
-                });
+                .setNegativeButton("取消", (dialog, which) -> dialog.dismiss());
         AlertDialog dialog = builder.create();
         dialog.show();
     }
@@ -1882,28 +1911,24 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             @Override
             public void onFailure(@NonNull Call call, @NonNull IOException e) {
                 Log.e("BiliMusic", "onFailure: " + e);
+                runOnUiThread(() -> Toast.makeText(context, "请求失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
             }
 
             @Override
             public void onResponse(@NonNull Call call, @NonNull Response res) throws IOException {
-                if (!res.isSuccessful()) {
-                    runOnUiThread(() -> Toast.makeText(context, "cid请求失败: " + res.code(), Toast.LENGTH_SHORT).show());
-                    return;
-                }
-
                 // 转成json取得cid
                 String str = res.body().string();
                 JsonObject json = JsonParser.parseString(str).getAsJsonObject().get("data").getAsJsonObject();
                 long cid = json.get("cid").getAsLong();
                 Log.i("BiliMusic", "获取到的CID: " + cid);
 
-                // 顺带获取标题，用于文件名。但文件名还是bv号，防止文件名异常
+                // 顺带获取标题，用于歌曲显示。但文件名还是bv号，防止文件名异常
                 String title = json.get("title").getAsString();
                 // 也顺带拿个封面
                 String coverUrl = json.get("pic").getAsString();
 
                 // Step 2: 获取音频 URL
-                HttpUrl url = HttpUrl.parse("https://api.bilibili.com/x/player/playurl").newBuilder()
+                HttpUrl url = Objects.requireNonNull(HttpUrl.parse("https://api.bilibili.com/x/player/playurl")).newBuilder()
                         .addQueryParameter("bvid", bv)
                         .addQueryParameter("cid", String.valueOf(cid))
                         .addQueryParameter("fnval", "16")
@@ -1923,11 +1948,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
                     @Override
                     public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                        if (!response.isSuccessful()) {
-                            runOnUiThread(() -> Toast.makeText(context, "音频URL请求失败: " + response.code(), Toast.LENGTH_SHORT).show());
-                            return;
-                        }
-
                         // 请求dash，分离视频和音频流
                         String json = response.body().string();
                         JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
@@ -1986,9 +2006,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                 } catch (IOException e) {
                                     Log.e("BiliMusic", "下载文件失败: ", e);
                                     callback.onResult(null); // 获取失败
+                                    runOnUiThread(() -> Toast.makeText(context, "下载失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
                                 }
-
-
                             }
                         });
                     }
