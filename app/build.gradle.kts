@@ -32,7 +32,6 @@ android {
 }
 
 dependencies {
-    //implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation(libs.media)
     implementation(libs.material)
     implementation(libs.lottie)
@@ -43,7 +42,6 @@ dependencies {
     implementation(libs.activity)
     implementation(libs.constraintlayout)
     implementation("androidx.recyclerview:recyclerview:1.3.2")
-    //implementation("com.github.michaelye.easydraganddrop:library:1.0.0")
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)
