@@ -6,21 +6,35 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.BlurMaskFilter;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.RenderEffect;
+import android.graphics.RuntimeShader;
+import android.graphics.Shader;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.MediaStore;
+import android.renderscript.Allocation;
+import android.renderscript.Element;
+import android.renderscript.RenderScript;
+import android.renderscript.ScriptIntrinsicBlur;
 import android.util.Log;
 import android.view.View;
+import android.view.Window;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
+
 import androidx.appcompat.widget.Toolbar;
 
 
@@ -46,6 +60,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -63,7 +78,8 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
 
     // 新增的变量
     private ActivityResultLauncher<Intent> imagePickerLauncher;
-    private int currentBackgroundType = 0; // 0: 歌单页面, 1: 播放页面
+    private int listBackgroundType = 0;
+    private int currentBackgroundType = 0; // 等于 listBackgroundType: 歌单页面, 反之: 播放页面
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -179,7 +195,10 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         Drawable navIcon = toolbar.getNavigationIcon();
         if (navIcon != null) {
             navIcon = DrawableCompat.wrap(navIcon.mutate());
-            DrawableCompat.setTint(navIcon, Color.parseColor("#c69bc5"));
+            // 从SharedPreferences获取主题色，如果没有则使用默认颜色
+            SharedPreferences prefs = getSharedPreferences("theme_prefs", MODE_PRIVATE);
+            int themeColor = prefs.getInt("theme_color", Color.parseColor("#c69bc5"));
+            DrawableCompat.setTint(navIcon, themeColor);
             toolbar.setNavigationIcon(navIcon);
         }
 
@@ -212,7 +231,9 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
     }
 
     private void showSettingsDialog() {
+        // 史山魅力时刻：根据 currentBackgroundType 来修改歌单还是播放页背景。存 listBackgroundType 好自由修改选项位置
         String[] options = {"设置歌单页面背景", "设置播放页面背景", "恢复默认背景"};
+        listBackgroundType = Arrays.binarySearch(options, "设置歌单页面背景");
 
         new AlertDialog.Builder(this)
                 .setTitle("背景设置")
@@ -228,6 +249,7 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
                 .setNegativeButton("取消", null)
                 .show();
     }
+
     private void showRestoreDefaultDialog() {
         String[] options = {"恢复歌单页面默认背景", "恢复播放页面默认背景", "恢复所有默认背景"};
 
@@ -249,6 +271,7 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
                 .setNegativeButton("取消", null)
                 .show();
     }
+
     private void restoreDefaultBackground(int backgroundType) {
         SharedPreferences prefs = getSharedPreferences("background_prefs", MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();
@@ -309,9 +332,166 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
 
     private void saveBackgroundImage(Uri imageUri, int backgroundType) {
         try {
-            // 获取图片输入流
-            InputStream inputStream = getContentResolver().openInputStream(imageUri);
+            // 获取图片并显示预览对话框
+            showBackgroundPreviewDialog(imageUri, backgroundType);
+        } catch (Exception e) {
+            e.printStackTrace();
+            Toast.makeText(this, "图片加载失败", Toast.LENGTH_SHORT).show();
+        }
+    }
 
+    private void showBackgroundPreviewDialog(Uri imageUri, int backgroundType) {
+        // 创建对话框布局
+        View dialogView = getLayoutInflater().inflate(R.layout.dialog_bg_preview, null);
+        SeekBar transparencySeekBar = dialogView.findViewById(R.id.transparencySeekBar);
+        SeekBar blurSeekBar = dialogView.findViewById(R.id.blurSeekBar);
+
+        // 记住原始背景
+        Drawable originalBackground = drawerLayout.getBackground();
+
+        // 异步加载和处理图片
+        new Thread(() -> {
+            try {
+                // 获取屏幕尺寸
+                int screenWidth = getResources().getDisplayMetrics().widthPixels;
+                int screenHeight = getResources().getDisplayMetrics().heightPixels;
+
+                // 使用采样率减小图片大小
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inJustDecodeBounds = true;
+                InputStream inputStream = getContentResolver().openInputStream(imageUri);
+                BitmapFactory.decodeStream(inputStream, null, options);
+                inputStream.close();
+
+                int sampleSize = calculateInSampleSize(options, screenWidth, screenHeight);
+                options = new BitmapFactory.Options();
+                options.inSampleSize = sampleSize;
+
+                // 重新加载图片
+                inputStream = getContentResolver().openInputStream(imageUri);
+                Bitmap originalBitmap = BitmapFactory.decodeStream(inputStream, null, options);
+                inputStream.close();
+
+                // 预先缩放到屏幕尺寸
+                final Bitmap preScaledBitmap = createScaledBitmap(originalBitmap, screenWidth, screenHeight);
+                if (originalBitmap != preScaledBitmap) {
+                    originalBitmap.recycle();
+                }
+
+                // 在UI线程中设置对话框
+                runOnUiThread(() -> {
+                    // 初始透明度和模糊值
+                    final int[] transparency = {130};
+                    final int[] blurRadius = {0};
+
+                    // 设置滑块初始值
+                    transparencySeekBar.setMax(255);
+                    transparencySeekBar.setProgress(transparency[0]);
+                    blurSeekBar.setMax(25);
+                    blurSeekBar.setProgress(blurRadius[0]);
+
+                    // 更新预览的帮助方法
+                    Runnable updatePreview = () -> {
+                        // 应用模糊效果
+                        Bitmap processedBitmap;
+                        if (blurRadius[0] > 0) {
+                            processedBitmap = blurBitmap(preScaledBitmap, blurRadius[0]);
+                        } else {
+                            processedBitmap = preScaledBitmap;
+                        }
+
+                        // 创建背景drawable并设置透明度
+                        BitmapDrawable backgroundDrawable = new BitmapDrawable(getResources(), processedBitmap);
+                        backgroundDrawable.setAlpha(transparency[0]);
+
+                        // 更新实时预览
+                        drawerLayout.setBackground(backgroundDrawable.getConstantState().newDrawable());
+                    };
+                    updatePreview.run(); // 马上更新一次
+
+                    // 设置滑块监听器
+                    transparencySeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                        @Override
+                        public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                            transparency[0] = progress;
+                            updatePreview.run();
+                        }
+
+                        @Override
+                        public void onStartTrackingTouch(SeekBar seekBar) {
+                        }
+
+                        @Override
+                        public void onStopTrackingTouch(SeekBar seekBar) {
+                        }
+                    });
+
+                    blurSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                        @Override
+                        public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                            blurRadius[0] = progress;
+                            updatePreview.run();
+                        }
+
+                        @Override
+                        public void onStartTrackingTouch(SeekBar seekBar) {
+                        }
+
+                        @Override
+                        public void onStopTrackingTouch(SeekBar seekBar) {
+                        }
+                    });
+
+                    // 创建对话框
+                    AlertDialog dialog = new AlertDialog.Builder(PlaylistListActivity.this)
+                            .setTitle("预览中")
+                            .setView(dialogView)
+                            .setPositiveButton("确认", (dialogInterface, i) -> {
+                                saveProcessedBackground(imageUri, backgroundType, transparency[0], blurRadius[0]);
+                            })
+                            .setNegativeButton("取消", (dialogInterface, i) -> {
+                                drawerLayout.setBackground(originalBackground);
+                            })
+                            .create();
+
+                    // 设置对话框属性
+                    Window window = dialog.getWindow();
+                    if (window != null) {
+                        window.setGravity(android.view.Gravity.BOTTOM);
+                        window.setDimAmount(0f); // 背景不变暗
+                    }
+                    // 设置点击外部不关闭
+                    dialog.setCanceledOnTouchOutside(false);
+                    dialog.show();
+                });
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                runOnUiThread(() -> Toast.makeText(this, "图片加载失败", Toast.LENGTH_SHORT).show());
+            }
+        }).start();
+    }
+
+    // 计算合适的采样率以减小图片大小，免得拖滑条会卡
+    private int calculateInSampleSize(BitmapFactory.Options options, int reqWidth, int reqHeight) {
+        final int height = options.outHeight;
+        final int width = options.outWidth;
+        int inSampleSize = 1;
+
+        if (height > reqHeight || width > reqWidth) {
+            final int halfHeight = height / 2;
+            final int halfWidth = width / 2;
+
+            while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2;
+            }
+        }
+
+        return inSampleSize;
+    }
+
+    private void saveProcessedBackground(Uri imageUri, int backgroundType, int transparency, int blurRadius) {
+        try {
             // 创建保存目录
             File backgroundDir = new File(getExternalFilesDir("backgrounds"), "");
             if (!backgroundDir.exists()) {
@@ -319,38 +499,95 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
             }
 
             // 确定文件名
-            String fileName = backgroundType == 0 ? "playlist_background.jpg" : "playback_background.jpg";
+            String fileName = backgroundType == listBackgroundType ? "playlist_background.jpg" : "playback_background.jpg";
             File backgroundFile = new File(backgroundDir, fileName);
 
-            // 保存图片
-            FileOutputStream outputStream = new FileOutputStream(backgroundFile);
-            byte[] buffer = new byte[1024];
-            int length;
-            while ((length = inputStream.read(buffer)) > 0) {
-                outputStream.write(buffer, 0, length);
+            // 直接获取当前显示的背景图
+            Drawable currentBackground = drawerLayout.getBackground();
+            if (!(currentBackground instanceof BitmapDrawable)) {
+                Toast.makeText(this, "背景设置失败：无法保存当前背景", Toast.LENGTH_SHORT).show();
+                return;
             }
+
+            Bitmap currentBitmap = ((BitmapDrawable) currentBackground).getBitmap();
+
+            // 保存当前显示的图片 (已经应用了透明度和模糊)
+            FileOutputStream outputStream = new FileOutputStream(backgroundFile);
+            currentBitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream);
             outputStream.close();
-            inputStream.close();
 
-            // 保存路径到SharedPreferences
+            // 保存设置到SharedPreferences
             SharedPreferences prefs = getSharedPreferences("background_prefs", MODE_PRIVATE);
-            String key = backgroundType == 0 ? "playlist_background_path" : "playback_background_path";
-            prefs.edit().putString(key, backgroundFile.getAbsolutePath()).apply();
-
-            // 立即应用背景
-            applyBackgroundImage();
+            String key = backgroundType == listBackgroundType ? "playlist_background_path" : "playback_background_path";
+            prefs.edit()
+                    .putString(key, backgroundFile.getAbsolutePath())
+                    .putInt(key + "_transparency", transparency)
+                    .putInt(key + "_blur", blurRadius)
+                    .apply();
 
             Toast.makeText(this, "背景设置成功", Toast.LENGTH_SHORT).show();
 
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
-            Toast.makeText(this, "背景设置失败", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "背景设置失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
+    // 添加模糊效果的方法
+    private Bitmap blurBitmap(Bitmap bitmap, int radius) {
+        if (radius == 0) return bitmap;
+
+        Bitmap output = Bitmap.createBitmap(bitmap.getWidth(), bitmap.getHeight(), bitmap.getConfig());
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // 对于Android 12及以上，使用RenderEffect
+            try {
+                // 使用ScriptIntrinsicBlur通过Canvas应用模糊
+                RenderScript rs = RenderScript.create(this);
+                Allocation input = Allocation.createFromBitmap(rs, bitmap);
+                Allocation outputAlloc = Allocation.createFromBitmap(rs, output);
+
+                // 将模糊半径限制在0.0f到25.0f之间
+                float blurRadius = Math.min(Math.max(radius, 0), 25);
+
+                ScriptIntrinsicBlur blurScript = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs));
+                blurScript.setInput(input);
+                blurScript.setRadius(blurRadius);
+                blurScript.forEach(outputAlloc);
+
+                outputAlloc.copyTo(output);
+
+                // 清理资源
+                input.destroy();
+                outputAlloc.destroy();
+                blurScript.destroy();
+                rs.destroy();
+            } catch (Exception e) {
+                e.printStackTrace();
+                return bitmap; // 如果失败就返回原图
+            }
+        } else {
+            // 较老版本使用RenderScript
+            RenderScript rs = RenderScript.create(this);
+            ScriptIntrinsicBlur script = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs));
+            Allocation input = Allocation.createFromBitmap(rs, bitmap);
+            Allocation outputAlloc = Allocation.createFromBitmap(rs, output);
+            script.setRadius(radius);
+            script.setInput(input);
+            script.forEach(outputAlloc);
+            outputAlloc.copyTo(output);
+            rs.destroy();
+        }
+
+        return output;
+    }
+
+    // 修改applyBackgroundImage方法，应用保存的模糊效果
     private void applyBackgroundImage() {
         SharedPreferences prefs = getSharedPreferences("background_prefs", MODE_PRIVATE);
         String playlistBgPath = prefs.getString("playlist_background_path", null);
+        int transparency = prefs.getInt("playlist_background_path_transparency", 130);
+        int blurRadius = prefs.getInt("playlist_background_path_blur", 0);
 
         // 使用DrawerLayout作为背景容器，而不是有边距的LinearLayout
         androidx.drawerlayout.widget.DrawerLayout drawerLayout = findViewById(R.id.drawer_layout);
@@ -368,13 +605,22 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
                         // 创建缩放后的位图，使用CENTER_CROP效果
                         Bitmap scaledBitmap = createScaledBitmap(originalBitmap, screenWidth, screenHeight);
 
+                        // 应用模糊效果（如果有的话）
+                        Bitmap processedBitmap = scaledBitmap;
+                        if (blurRadius > 0) {
+                            processedBitmap = blurBitmap(scaledBitmap, blurRadius);
+                            if (processedBitmap != scaledBitmap) {
+                                scaledBitmap.recycle();
+                            }
+                        }
+
                         // 创建背景drawable
-                        BitmapDrawable backgroundDrawable = new BitmapDrawable(getResources(), scaledBitmap);
-                        backgroundDrawable.setAlpha(180); // 设置透明度，保证文字可见
+                        BitmapDrawable backgroundDrawable = new BitmapDrawable(getResources(), processedBitmap);
+                        backgroundDrawable.setAlpha(transparency); // 使用保存的透明度
                         drawerLayout.setBackground(backgroundDrawable);
 
                         // 回收原始位图
-                        if (originalBitmap != scaledBitmap) {
+                        if (originalBitmap != processedBitmap) {
                             originalBitmap.recycle();
                         }
                     }
@@ -496,6 +742,7 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
                 .setNegativeButton("取消", null)
                 .show();
     }
+
     @Override
     public void onBackPressed() {
         if (drawerLayout.isDrawerOpen(GravityCompat.START)) {
@@ -504,6 +751,7 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
             super.onBackPressed();
         }
     }
+
     private void showCreateDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         final EditText input = new EditText(this);
