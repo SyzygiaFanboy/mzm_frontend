@@ -195,10 +195,7 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         Drawable navIcon = toolbar.getNavigationIcon();
         if (navIcon != null) {
             navIcon = DrawableCompat.wrap(navIcon.mutate());
-            // 从SharedPreferences获取主题色，如果没有则使用默认颜色
-            SharedPreferences prefs = getSharedPreferences("theme_prefs", MODE_PRIVATE);
-            int themeColor = prefs.getInt("theme_color", Color.parseColor("#c69bc5"));
-            DrawableCompat.setTint(navIcon, themeColor);
+            DrawableCompat.setTint(navIcon, Color.parseColor("#c69bc5"));
             toolbar.setNavigationIcon(navIcon);
         }
 
@@ -448,6 +445,10 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
                             .setView(dialogView)
                             .setPositiveButton("确认", (dialogInterface, i) -> {
                                 saveProcessedBackground(imageUri, backgroundType, transparency[0], blurRadius[0]);
+                                if (backgroundType != listBackgroundType) {
+                                    // 如果修改播放页面背景，还原回去
+                                    drawerLayout.setBackground(originalBackground);
+                                }
                             })
                             .setNegativeButton("取消", (dialogInterface, i) -> {
                                 drawerLayout.setBackground(originalBackground);
