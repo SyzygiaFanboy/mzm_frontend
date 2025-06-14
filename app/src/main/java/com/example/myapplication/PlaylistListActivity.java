@@ -230,7 +230,7 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
     private void showSettingsDialog() {
         // 史山魅力时刻：根据 currentBackgroundType 来修改歌单还是播放页背景。存 listBackgroundType 好自由修改选项位置
         String[] options = {"设置歌单页面背景", "设置播放页面背景", "恢复默认背景"};
-        listBackgroundType = Arrays.binarySearch(options, "设置歌单页面背景");
+        listBackgroundType = Arrays.asList(options).indexOf("设置歌单页面背景");
 
         new AlertDialog.Builder(this)
                 .setTitle("背景设置")
