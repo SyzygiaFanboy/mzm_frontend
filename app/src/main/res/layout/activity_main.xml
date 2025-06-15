@@ -188,7 +188,7 @@
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="删除选中"
                 android:scaleType="centerInside"
-                android:src="@drawable/ic_batch_delete" />
+                android:src="@drawable/ic_list_delete" />
 
             <ImageButton
                 android:id="@+id/btnBatchSelect"

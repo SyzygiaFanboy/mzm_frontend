@@ -1954,6 +1954,11 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     }
 
     private void showBiliVideoSelectionDialog(String uid, String fid, myCallback<List<String>> callback) {
+        // 记录当前页码和是否正在加载标志
+        final AtomicInteger currentPage = new AtomicInteger(1);
+        final AtomicBoolean isLoading = new AtomicBoolean(false);
+        final AtomicBoolean hasMoreData = new AtomicBoolean(true);
+
         // 在UI线程中创建和显示对话框
         runOnUiThread(() -> {
             // 创建对话框视图
@@ -2004,7 +2009,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             btnConfirm.setOnClickListener(v -> {
                 List<BiliVideoAdapter.BiliVideoItem> selectedItems = adapter.getSelectedItems();
                 if (selectedItems.isEmpty()) {
-                    Toast.makeText(this, "请至少选择一个视频", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "请选择至少一个视频", Toast.LENGTH_SHORT).show();
                     return;
                 }
 
@@ -2024,6 +2029,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
             // 加载第一页数据
             loadBiliVideoPage(uid, fid, 1, 20, adapter, lvVideos, loadMoreProgress);
+
+
         });
     }
 
@@ -2080,25 +2087,41 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 String json = response.body().string();
                 JsonObject jsonObj = JsonParser.parseString(json).getAsJsonObject();
                 JsonObject data = jsonObj.getAsJsonObject("data");
-                JsonArray medias = data.getAsJsonArray("medias");
+
+                // 收藏夹为空的处理
+                JsonArray medias;
+                if (data.has("medias") && !data.get("medias").isJsonNull()) {
+                    medias = data.getAsJsonArray("medias");
+                } else if (pageNum == 1) {
+                    runOnUiThread(() -> {
+                        dismissProgressDialog();
+                        loadMoreProgress.setVisibility(View.GONE);
+                        Toast.makeText(MainActivity.this, "收藏夹为空", Toast.LENGTH_SHORT).show();
+                    });
+                    return;
+                } else {
+                    runOnUiThread(() -> {
+                        loadMoreProgress.setVisibility(View.GONE);
+                    });
+                    return;
+                }
+
                 boolean hasMore = data.get("has_more").getAsBoolean();
 
                 // 解析视频信息
                 List<BiliVideoAdapter.BiliVideoItem> videoItems = new ArrayList<>();
-                if (medias != null) {
-                    for (JsonElement media : medias) {
-                        JsonObject videoObj = media.getAsJsonObject();
-                        String bvid = videoObj.get("bvid").getAsString();
-                        String title = videoObj.get("title").getAsString();
-                        String uploader = videoObj.getAsJsonObject("upper").get("name").getAsString();
-                        int duration = videoObj.get("duration").getAsInt();
+                for (JsonElement media : medias) {
+                    JsonObject videoObj = media.getAsJsonObject();
+                    String bvid = videoObj.get("bvid").getAsString();
+                    String title = videoObj.get("title").getAsString();
+                    String uploader = videoObj.getAsJsonObject("upper").get("name").getAsString();
+                    int duration = videoObj.get("duration").getAsInt();
 
-                        // 失效视频后续无法获取，直接筛掉
-                        if (!Objects.equals(title, "已失效视频")) {
-                            BiliVideoAdapter.BiliVideoItem item = new BiliVideoAdapter.BiliVideoItem(
-                                    bvid, title, uploader, duration);
-                            videoItems.add(item);
-                        }
+                    // 失效视频后续无法获取，直接筛掉
+                    if (!Objects.equals(title, "已失效视频")) {
+                        BiliVideoAdapter.BiliVideoItem item = new BiliVideoAdapter.BiliVideoItem(
+                                bvid, title, uploader, duration);
+                        videoItems.add(item);
                     }
                 }
 
@@ -2113,14 +2136,22 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                         loadMoreProgress.setVisibility(View.GONE);
                     }
 
+                    // 如果全都是失效视频
+                    if (videoItems.isEmpty() && finalPageNum == 1) {
+                        dismissProgressDialog();
+                        Toast.makeText(MainActivity.this, "收藏夹内不存在有效视频", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
                     // 添加数据到适配器
                     adapter.addItems(videoItems);
 
                     // 如果是第一次加载，设置滚动监听器
                     if (finalPageNum == 1) {
                         listView.setOnScrollListener(new AbsListView.OnScrollListener() {
+                            private int page = finalPageNum;
                             private int visibleThreshold = 5;
-                            private boolean loading = false;
+                            private boolean loading = true;
                             private int previousTotal = 0;
 
                             @Override
@@ -2135,12 +2166,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                     previousTotal = totalItemCount;
                                 }
 
-                                if (!loading
-                                        && (totalItemCount - visibleItemCount) <= (firstVisibleItem + visibleThreshold)
-                                        && finalHasMore) {
+                                if (!loading && finalHasMore && (totalItemCount - visibleItemCount) <=
+                                        (firstVisibleItem + visibleThreshold)) {
                                     // 加载下一页
                                     loading = true;
-                                    loadBiliVideoPage(uid, fid, finalPageNum + 1, pageSize, adapter, listView,
+                                    page++;
+                                    loadBiliVideoPage(uid, fid, page, pageSize, adapter, listView,
                                             loadMoreProgress);
                                 }
                             }
