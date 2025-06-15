@@ -692,7 +692,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     private String formatTime(int milliseconds) {
         int seconds = (milliseconds / 1000) % 60;
         int minutes = (milliseconds / (1000 * 60)) % 60;
-        return String.format("%02d:%02d", minutes, seconds);
+        return String.format(Locale.getDefault(),"%02d:%02d", minutes, seconds);
     }
 
     private void deleteAllSongs() {
@@ -1954,11 +1954,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     }
 
     private void showBiliVideoSelectionDialog(String uid, String fid, myCallback<List<String>> callback) {
-        // 记录当前页码和是否正在加载标志
-        final AtomicInteger currentPage = new AtomicInteger(1);
-        final AtomicBoolean isLoading = new AtomicBoolean(false);
-        final AtomicBoolean hasMoreData = new AtomicBoolean(true);
-
         // 在UI线程中创建和显示对话框
         runOnUiThread(() -> {
             // 创建对话框视图
@@ -2027,10 +2022,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             // 显示对话框
             videoDialog.show();
 
-            // 加载第一页数据
+            // 加载第一页数据。里面会设置滚动监听器递归加载下一页
             loadBiliVideoPage(uid, fid, 1, 20, adapter, lvVideos, loadMoreProgress);
-
-
         });
     }
 
