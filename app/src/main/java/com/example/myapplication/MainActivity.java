@@ -23,6 +23,7 @@ import android.util.Log;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.AbsListView;
 import android.widget.AdapterView;
 import android.widget.BaseAdapter;
 import android.widget.CheckBox;
@@ -51,6 +52,7 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.lifecycle.ViewModelProvider;
 
 import com.example.myapplication.adapter.BatchModeAdapter;
+import com.example.myapplication.adapter.BiliVideoAdapter;
 import com.example.myapplication.model.MusicViewModel;
 import com.example.myapplication.model.Playlist;
 import com.example.myapplication.model.Song;
@@ -99,7 +101,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     private MusicPlayer musicPlayer;
     private TextView preogress = null;
     private ImageView albumArt;
-    //private List<Map<String, Object>> musicList = new ArrayList<>(); // 确保非空//这里因为listitem是私有变量，得先创建个全局的先，，，
+    // private List<Map<String, Object>> musicList = new ArrayList<>(); //
+    // 确保非空//这里因为listitem是私有变量，得先创建个全局的先，，，
     private SeekBar progressBar = null;
     private boolean isTracking = false;
     private boolean stop = false;
@@ -119,8 +122,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     private String currentPlaylist;
     private boolean isAutoTriggeredByCompletion = false;
 
-
-    //进度加载弹窗的成员变量
+    // 进度加载弹窗的成员变量
     private AlertDialog progressDialog;
     private ProgressBar dialogProgressBar;
     private TextView dialogMessage;
@@ -131,12 +133,10 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
     private AtomicBoolean isSyncActive = new AtomicBoolean(false);
 
-
     // 添加B站音乐的回调接口
     public interface myCallback<T> {
         void onResult(T result);
     }
-
 
     private void syncBar() {
         new Thread(new ProgressSync()).start();
@@ -175,7 +175,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         EdgeToEdge.enable(this);
         Song song = new Song(0, "暂无歌曲", "", "");
         setContentView(R.layout.activity_main);
-        //musicPlayer = new MusicPlayer(this);
+        // musicPlayer = new MusicPlayer(this);
         musicPlayer = ((MyApp) getApplication()).getMusicPlayer();
         musicPlayer.setOnSongCompletionListener(this);
 
@@ -198,11 +198,11 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         progressBar.setMax(song.getTimeDuration());
         listview = findViewById(R.id.playlist);
         albumArt = findViewById(R.id.albumArt);
-        //listview = findViewById(R.id.playlist);
+        // listview = findViewById(R.id.playlist);
         listview.setChoiceMode(ListView.CHOICE_MODE_SINGLE);
         listview.setOnItemClickListener(new MusicListItemClickListener());
-        //MusicLoader.initMusicFile(this);
-        //playBtn = findViewById(R.id.playerbutton);
+        // MusicLoader.initMusicFile(this);
+        // playBtn = findViewById(R.id.playerbutton);
         playBtn.setEnabled(false);
         playBtn.setText(musicPlayer.getPlayStatus() == PlayerStatus.PLAYING ? "暂停" : "播放");
         MusicViewModel viewModel = new ViewModelProvider(this).get(MusicViewModel.class);
@@ -211,17 +211,18 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             btnPrevious.setEnabled(false);
         }
         currentPlaylist = getIntent().getStringExtra("playlist");
-        if (currentPlaylist == null) currentPlaylist = "默认歌单";
+        if (currentPlaylist == null)
+            currentPlaylist = "默认歌单";
         loadMusicList(listview, currentPlaylist);
         updateNavButtons();
-//        // 绑定返回歌单按钮
-//        Button btnBackToPlaylists = findViewById(R.id.menu_back_to_playlists);
-//        btnBackToPlaylists.setOnClickListener(v -> {
-//            // 跳转到歌单列表页面，可以看看怎么改
-//            Intent intent = new Intent(MainActivity.this, PlaylistListActivity.class);
-//            startActivity(intent);
-//            finish();
-//        });
+        // // 绑定返回歌单按钮
+        // Button btnBackToPlaylists = findViewById(R.id.menu_back_to_playlists);
+        // btnBackToPlaylists.setOnClickListener(v -> {
+        // // 跳转到歌单列表页面，可以看看怎么改
+        // Intent intent = new Intent(MainActivity.this, PlaylistListActivity.class);
+        // startActivity(intent);
+        // finish();
+        // });
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
         if (getSupportActionBar() != null) {
@@ -259,39 +260,40 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             }
         });
 
-//        // 退出按钮监听
-//        findViewById(R.id.menu_logout).setOnClickListener(v -> {
-//            // 停止播放并释放播放器资源
-//            if (musicPlayer != null) {
-//                musicPlayer.stop();
-//                musicPlayer.release();
-//            }
-//
-//            // 终止进度，同时同步线程
-//            if (progressSyncThread != null && progressSyncThread.isAlive()) {
-//                progressSyncThread.interrupt();
-//                isProgressSyncRunning = false;
-//            }
-//
-//            SharedPreferences preferences = getSharedPreferences("user_pref", MODE_PRIVATE);
-//            preferences.edit().putBoolean("is_logged_in", false).apply();
-//            startActivity(new Intent(this, LoginActivity.class));
-//            finish();
-//        });
-//        DrawerLayout drawerLayout = findViewById(R.id.drawer_layout);
-//        ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
-//                this,
-//                drawerLayout,
-//                toolbar,
-//                R.string.navigation_drawer_open,
-//                R.string.navigation_drawer_close
-//        );
-//        drawerLayout.addDrawerListener(toggle);
-//        toggle.syncState();
-//        // 隐藏 ActionBar 标题
-//        if (getSupportActionBar() != null) {
-//            getSupportActionBar().setDisplayShowTitleEnabled(false);
-//        }
+        // // 退出按钮监听
+        // findViewById(R.id.menu_logout).setOnClickListener(v -> {
+        // // 停止播放并释放播放器资源
+        // if (musicPlayer != null) {
+        // musicPlayer.stop();
+        // musicPlayer.release();
+        // }
+        //
+        // // 终止进度，同时同步线程
+        // if (progressSyncThread != null && progressSyncThread.isAlive()) {
+        // progressSyncThread.interrupt();
+        // isProgressSyncRunning = false;
+        // }
+        //
+        // SharedPreferences preferences = getSharedPreferences("user_pref",
+        // MODE_PRIVATE);
+        // preferences.edit().putBoolean("is_logged_in", false).apply();
+        // startActivity(new Intent(this, LoginActivity.class));
+        // finish();
+        // });
+        // DrawerLayout drawerLayout = findViewById(R.id.drawer_layout);
+        // ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
+        // this,
+        // drawerLayout,
+        // toolbar,
+        // R.string.navigation_drawer_open,
+        // R.string.navigation_drawer_close
+        // );
+        // drawerLayout.addDrawerListener(toggle);
+        // toggle.syncState();
+        // // 隐藏 ActionBar 标题
+        // if (getSupportActionBar() != null) {
+        // getSupportActionBar().setDisplayShowTitleEnabled(false);
+        // }
 
         // 请求存储权限
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -302,14 +304,15 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 startActivityForResult(intent, REQUEST_CODE_STORAGE_PERMISSION);
             }
         }
-//        findViewById(R.id.menu_search).setOnClickListener(v -> {
-//            Intent intent = new Intent(MainActivity.this, SearchActivity.class);
-//            startActivityForResult(intent, REQUEST_CODE_SEARCH); // 使用 startActivityForResult
-//            drawerLayout.closeDrawer(GravityCompat.START);
-//        });
+        // findViewById(R.id.menu_search).setOnClickListener(v -> {
+        // Intent intent = new Intent(MainActivity.this, SearchActivity.class);
+        // startActivityForResult(intent, REQUEST_CODE_SEARCH); // 使用
+        // startActivityForResult
+        // drawerLayout.closeDrawer(GravityCompat.START);
+        // });
 
-//        musicPlayer = new MusicPlayer(getApplicationContext());
-//        musicPlayer.setOnSongCompletionListener(this);
+        // musicPlayer = new MusicPlayer(getApplicationContext());
+        // musicPlayer.setOnSongCompletionListener(this);
 
         btnBatchSelect.setOnClickListener(v -> {
             isBatchMode = !isBatchMode;
@@ -318,7 +321,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             if (adapter != null) {
                 adapter.setBatchMode(isBatchMode);
             }
-            //spqqxkz;
+            // spqqxkz;
             adapter.setOnSelectAllListener(shouldSelectAll -> {
                 isAllSelected = shouldSelectAll;
                 cbSelectAll.setChecked(shouldSelectAll);
@@ -447,11 +450,10 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 if (fromUser) {
-                    //musicPlayer.seekTo(progress);
+                    // musicPlayer.seekTo(progress);
                     preogress.setText(formatTime(progress) + "/" + formatTime(seekBar.getMax()));
                 }
             }
-
 
             @Override
             public void onStartTrackingTouch(SeekBar seekBar) {
@@ -472,10 +474,9 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     runOnUiThread(() -> {
                         musicPlayer.pause();
                         musicPlayer.release();
-                        onSongCompleted();//回调
+                        onSongCompleted();// 回调
                     });
                 }
-
 
                 // 重新启动进度同步线程
                 if (!isProgressSyncRunning) {
@@ -546,7 +547,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                     // 获取文件信息，用于转化成song
                                     MediaMetadataRetriever retriever = new MediaMetadataRetriever();
                                     retriever.setDataSource(path);
-                                    String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                                    String durationStr = retriever
+                                            .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
                                     int duration = Integer.parseInt(durationStr) / 1000;
 
                                     // 封装、添加到歌单
@@ -601,7 +603,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                     // 获取文件信息，用于转化成song
                                     MediaMetadataRetriever retriever = new MediaMetadataRetriever();
                                     retriever.setDataSource(path);
-                                    String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                                    String durationStr = retriever
+                                            .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
                                     int duration = Integer.parseInt(durationStr) / 1000;
 
                                     // 封装、添加到歌单
@@ -632,7 +635,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                 }
                             }));
                             // 检查是否已经失败并退出
-                            if (failCnt.get()>0) {
+                            if (failCnt.get() > 0) {
                                 runOnUiThread(this::dismissProgressDialog);
                                 break;
                             }
@@ -655,7 +658,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         });
     }
 
-    //回调
+    // 回调
     @Override
     public void onSongCompleted() {
         Log.d("MainActivity", "收到播放完成回调");
@@ -763,7 +766,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         Toast.makeText(this, "图片缓存已清理", Toast.LENGTH_SHORT).show();
     }
 
-    //字面意思
+    // 字面意思
     private void toggleBatchMode() {
         isBatchMode = !isBatchMode;
         BatchModeAdapter adapter = (BatchModeAdapter) listview.getAdapter();
@@ -844,7 +847,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         playSongAt(selectedPosition);
     }
 
-    private void moveSongUp(int position) {//字面意思
+    private void moveSongUp(int position) {// 字面意思
         if (musicList.isEmpty() || position <= 0 || position >= musicList.size()) {
             Toast.makeText(this, "无法上移", Toast.LENGTH_SHORT).show();
             return;
@@ -856,11 +859,11 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         listview.setItemChecked(selectedPosition, true);
         listview.smoothScrollToPosition(selectedPosition);
         updatePersistentStorage();
-//        if (selectedPosition >= 0 && selectedPosition < musicList.size()) {
-//            Map<String, Object> selectedSongMap = musicList.get(selectedPosition);
-//            selectSong = Song.fromMap(selectedSongMap);  // 更新成员变量
-//            loadMusicCover(selectSong.getFilePath());
-//        }
+        // if (selectedPosition >= 0 && selectedPosition < musicList.size()) {
+        // Map<String, Object> selectedSongMap = musicList.get(selectedPosition);
+        // selectSong = Song.fromMap(selectedSongMap); // 更新成员变量
+        // loadMusicCover(selectSong.getFilePath());
+        // }
     }
 
     private void moveSongDown(int position) {
@@ -886,11 +889,11 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
         // 如果需要更新持久化存储中的数据，可以在这里同步更新文件内容
         updatePersistentStorage();
-//        if (selectedPosition >= 0 && selectedPosition < musicList.size()) {
-//            Map<String, Object> selectedSongMap = musicList.get(selectedPosition);
-//            selectSong = Song.fromMap(selectedSongMap);  // 更新成员变量
-//            loadMusicCover(selectSong.getFilePath());
-//        }
+        // if (selectedPosition >= 0 && selectedPosition < musicList.size()) {
+        // Map<String, Object> selectedSongMap = musicList.get(selectedPosition);
+        // selectSong = Song.fromMap(selectedSongMap); // 更新成员变量
+        // loadMusicCover(selectSong.getFilePath());
+        // }
     }
 
     // 遍历 musicList 更新每项的 index
@@ -945,7 +948,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         btnPrevious.setEnabled(hasItems);
     }
 
-    //这个函数可能会用到，别删
+    // 这个函数可能会用到，别删
     public void refreshPlaylist() {
         // 重新从文件加载最新数据
         musicList = MusicLoader.loadSongs(listview.getContext(), currentPlaylist);
@@ -963,8 +966,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                         musicList,
                         R.layout.playlist_layout,
                         new String[]{"index", "name", "TimeDuration", "isSelected"},
-                        new int[]{R.id.seq, R.id.musicname, R.id.musiclength, R.id.cbSelect}
-                );
+                        new int[]{R.id.seq, R.id.musicname, R.id.musiclength, R.id.cbSelect});
                 listview.setAdapter(adapter);
             }
         }
@@ -996,7 +998,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                         Bitmap scaledBitmap = createScaledBitmapForImageView(originalBitmap, screenWidth, screenHeight);
 
                         // 创建背景drawable
-                        android.graphics.drawable.BitmapDrawable backgroundDrawable = new android.graphics.drawable.BitmapDrawable(getResources(), scaledBitmap);
+                        android.graphics.drawable.BitmapDrawable backgroundDrawable = new android.graphics.drawable.BitmapDrawable(
+                                getResources(), scaledBitmap);
                         backgroundDrawable.setAlpha(180); // 设置透明度，保证文字可见
                         drawerLayout.setBackground(backgroundDrawable);
 
@@ -1111,15 +1114,13 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     Uri uri = data.getClipData().getItemAt(i).getUri();
                     uriList.add(uri);
                     getContentResolver().takePersistableUriPermission(
-                            uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    );
+                            uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 }
             } else if (data.getData() != null) {
                 Uri uri = data.getData();
                 uriList.add(uri);
                 getContentResolver().takePersistableUriPermission(
-                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                );
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             }
 
             // 调用已有的方法批量复制添加，并在内部完成
@@ -1129,7 +1130,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         }
     }
 
-    //去重，歌曲本地储存唯一标识用的是musicname，复选删除同名歌曲将影响播放状态，但没有实现，可修改
+    // 去重，歌曲本地储存唯一标识用的是musicname，复选删除同名歌曲将影响播放状态，但没有实现，可修改
     private boolean isSongDuplicate(Song newSong, List<Song> existingSongs) {
         for (Song song : existingSongs) {
             // 标准化URI字符串
@@ -1144,8 +1145,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         return false;
     }
 
-    //获取文件名，这里可以改进一下，使其能够获取在线歌曲的metadata的信息，但是注意不要修改数据库的内容，inputsong.html也可以改进一下，或者可以添加本机
-    //的上传服务，实现从本机上传音乐至tomcat
+    // 获取文件名，这里可以改进一下，使其能够获取在线歌曲的metadata的信息，但是注意不要修改数据库的内容，inputsong.html也可以改进一下，或者可以添加本机
+    // 的上传服务，实现从本机上传音乐至tomcat
     private String getFileName(Uri uri) {
         String result = null;
         if ("content".equals(uri.getScheme())) {
@@ -1222,8 +1223,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                         newSongs.add(newSong);
                     }
                 } catch (IOException e) {
-                    runOnUiThread(() ->
-                            Toast.makeText(this, "添加失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                    runOnUiThread(() -> Toast.makeText(this, "添加失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
                 }
 
                 // 计算当前进度百分比
@@ -1265,8 +1265,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     updatePlaylistCover(currentPlaylist);
                 }
 
-                //dismissProgressDialog();
-                //toast一个
+                // dismissProgressDialog();
+                // toast一个
                 if (dialogMessage != null) {
                     dialogMessage.setText("歌曲添加完成");
                 }
@@ -1348,10 +1348,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             Log.d(TAG, "发送歌单封面更新广播: " + playlistName);
         });
     }
+
     private String getLastSongInPlaylist(String playlistName) {
         try {
             File file = MusicLoader.getMusicFile(this);
-            if (!file.exists()) return null;
+            if (!file.exists())
+                return null;
 
             String lastSong = null;
             java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(file));
@@ -1370,7 +1372,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         }
     }
 
-    //删除音乐，注意只是删除按钮的逻辑，复选框逻辑在初始化那块写了，闲得无聊可以合并一下
+    // 删除音乐，注意只是删除按钮的逻辑，复选框逻辑在初始化那块写了，闲得无聊可以合并一下
     private void deleteSelectedSong(int position) {
 
         // 检查索引有效性
@@ -1385,8 +1387,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             selectedPositions.remove((Integer) position);
         }
 
-//         检查是否删除的是当前播放歌曲
-//        boolean isCurrentSongDeleted = false;
+        // 检查是否删除的是当前播放歌曲
+        // boolean isCurrentSongDeleted = false;
 
         if (currentSong != null) {
             Map<String, Object> deletedSongMap = musicList.get(position);
@@ -1437,13 +1439,13 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         updatePersistentStorage();
         setResult(RESULT_OK);
         // 调整后续项的序号
-//        for (int i = position; i < musicList.size(); i++) {
-//            musicList.get(i).put("index", i + 1);
-//        }
+        // for (int i = position; i < musicList.size(); i++) {
+        // musicList.get(i).put("index", i + 1);
+        // }
         updateSongIndices();
         updatePersistentStorage();
         // 刷新列表适配器
-//        MusicLoader.deleteMusic(this, position);
+        // MusicLoader.deleteMusic(this, position);
         ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
         // 更新播放按钮状态
         if (isCurrentSongDeleted) {
@@ -1504,7 +1506,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         albumArt.setImageResource(R.drawable.default_cover);
     }
 
-    //这个地方需要修改，增加一下一键删除的单选
+    // 这个地方需要修改，增加一下一键删除的单选
     private void showDeleteConfirmationDialog() {
         // 动态创建包含复选框的布局
         LinearLayout layout = new LinearLayout(this);
@@ -1543,8 +1545,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     musicList,
                     R.layout.playlist_layout,
                     new String[]{"index", "name", "TimeDuration", "isSelected"},
-                    new int[]{R.id.seq, R.id.musicname, R.id.musiclength, R.id.cbSelect}
-            );
+                    new int[]{R.id.seq, R.id.musicname, R.id.musiclength, R.id.cbSelect});
             listview.setAdapter(adapter);
         } else {
             adapter.setData(musicList);
@@ -1638,7 +1639,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         musicPlayer.setCompletionLegitimate(true);
     }
 
-    //下面的上一首按钮与下一首按钮将来有可能调整UI的时候会删除
+    // 下面的上一首按钮与下一首按钮将来有可能调整UI的时候会删除
     public void next(View view) throws IOException {
         isAutoNextTriggered = true;
         RadioGroup radioGroup = findViewById(R.id.radiogroup);
@@ -1661,7 +1662,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         selectedPosition = nextPos;
         Map<String, Object> map = musicList.get(nextPos);
         selectSong = Song.fromMap(map);
-
 
         playSongAt(nextPos);
         song = selectSong;
@@ -1687,7 +1687,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
     }
 
-    //上一首按钮处理逻辑
+    // 上一首按钮处理逻辑
     public void previous(View view) throws IOException {
         isAutoNextTriggered = true;
         RadioGroup radioGroup = findViewById(R.id.radiogroup);
@@ -1736,7 +1736,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         new Thread(new ProgressSync()).start();
     }
 
-    //更改歌曲播放状态
+    // 更改歌曲播放状态
     private void switchPlayStatus(PlayerStatus status) {
         switch (status) {
             case PLAYING:
@@ -1783,11 +1783,11 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     Pattern pattern = Pattern.compile("https://b23\\.tv/\\S+");
                     Matcher matcher = pattern.matcher(bv);
                     if (matcher.find()) {
-                        bv = matcher.group();  // 找到第一个短链
+                        bv = matcher.group(); // 找到第一个短链
                     }
                     // 发送HEAD请求得到重定向的链接
                     OkHttpClient client = new OkHttpClient.Builder()
-                            .followRedirects(false)  // 关键点：不要自动跟随重定向
+                            .followRedirects(false) // 关键点：不要自动跟随重定向
                             .build();
 
                     Request request = new Request.Builder()
@@ -1869,27 +1869,43 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             if (collectionId.isEmpty() || uid.isEmpty()) {
                 Toast.makeText(this, "不能为空", Toast.LENGTH_SHORT).show();
             } else {
-                // 直接复制前面会有"UID"，去一下
+                // 直接复制前面会有"UID:"，去一下
                 uid = uid.replace("UID:", "").trim();
 
+                // 确保纯数字
                 if (uid.matches("\\d+")) {
-                    // uid 是纯数字的逻辑
+                    // 显示加载进度
+                    showProgressDialog();
+                    if (dialogMessage != null) {
+                        dialogMessage.setText("正在获取收藏夹信息...");
+                    }
+
+                    // 先查找所有收藏夹，匹配收藏夹名
                     OkHttpClient client = new OkHttpClient();
-                    Request req = new Request.Builder().url("https://api.bilibili.com/x/v3/fav/folder/created/list-all?type=2&up_mid=" + uid)
+                    Request req = new Request.Builder()
+                            .url("https://api.bilibili.com/x/v3/fav/folder/created/list-all?type=2&up_mid=" + uid)
                             .addHeader("User-Agent", "Mozilla/5.0")
                             .addHeader("Referer", "https://www.bilibili.com/")
                             .build();
+                    String finalUid = uid;
                     client.newCall(req).enqueue(new Callback() {
                         @Override
                         public void onFailure(@NonNull Call call, @NonNull IOException e) {
                             Log.e("BiliCollection", "onFailure: " + e.getMessage());
-                            runOnUiThread(() -> Toast.makeText(MainActivity.this, "请求失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                            runOnUiThread(() -> {
+                                dismissProgressDialog();
+                                Toast.makeText(MainActivity.this, "请求失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                            });
                         }
 
                         @Override
                         public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                             if (!response.isSuccessful()) {
-                                runOnUiThread(() -> Toast.makeText(MainActivity.this, "请求失败: " + response.code(), Toast.LENGTH_SHORT).show());
+                                runOnUiThread(() -> {
+                                    dismissProgressDialog();
+                                    Toast.makeText(MainActivity.this, "请求失败: " + response.code(), Toast.LENGTH_SHORT)
+                                            .show();
+                                });
                                 return;
                             }
 
@@ -1897,61 +1913,32 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                             JsonObject jsonObj = JsonParser.parseString(json).getAsJsonObject();
                             JsonArray folders = jsonObj.getAsJsonObject("data").getAsJsonArray("list");
 
-                            // 存放收藏夹里所有bv号
-                            List<String> bvList = new ArrayList<>();
                             boolean found = false;
+                            String fid = "";
 
                             // 遍历查找指定的收藏夹
                             for (JsonElement folder : folders) {
                                 JsonObject folderObj = folder.getAsJsonObject();
                                 if (folderObj.get("title").getAsString().equals(collectionId)) {
                                     found = true;
-                                    String fid = folderObj.get("id").getAsString();
+                                    fid = folderObj.get("id").getAsString();
                                     Log.d("BiliCollection", "找到收藏夹: " + fid);
-
-                                    // 发送请求获取收藏夹中视频的bv
-                                    Request videoReq = new Request.Builder()
-                                            .url("https://api.bilibili.com/x/v3/fav/resource/ids?media_id=" + fid)
-                                            .addHeader("User-Agent", "Mozilla/5.0")
-                                            .addHeader("Referer", "https://www.bilibili.com/")
-                                            .build();
-                                    client.newCall(videoReq).enqueue(new Callback() {
-                                        @Override
-                                        public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                                            Log.e("BiliCollection", "获取收藏夹视频失败: " + e.getMessage());
-                                            runOnUiThread(() -> Toast.makeText(MainActivity.this, "获取收藏夹视频失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
-                                        }
-
-                                        @Override
-                                        public void onResponse(@NonNull Call call, @NonNull Response res) throws IOException {
-                                            if (!res.isSuccessful()) {
-                                                runOnUiThread(() -> Toast.makeText(MainActivity.this, "获取收藏夹视频失败: " + res.code(), Toast.LENGTH_SHORT).show());
-                                                return;
-                                            }
-
-                                            String videoJson = res.body().string();
-                                            JsonObject videoObj = JsonParser.parseString(videoJson).getAsJsonObject();
-                                            JsonArray videoList = videoObj.getAsJsonArray("data");
-
-                                            // 遍历视频列表，提取BV号
-                                            for (JsonElement video : videoList) {
-                                                JsonObject videoItem = video.getAsJsonObject();
-                                                String bvid = videoItem.get("bvid").getAsString();
-                                                bvList.add(bvid);
-                                            }
-                                            Log.d("BiliCollection", "收藏夹中的BV号: " + bvList);
-                                            callback.onResult(bvList); // 调用回调传递
-                                        }
-                                    });
                                     break;
                                 }
                             }
+
                             if (!found) {
-                                runOnUiThread(() -> Toast.makeText(MainActivity.this, "未找到指定收藏夹", Toast.LENGTH_SHORT).show());
+                                runOnUiThread(() -> {
+                                    dismissProgressDialog();
+                                    Toast.makeText(MainActivity.this, "未找到指定收藏夹", Toast.LENGTH_SHORT).show();
+                                });
+                                return;
                             }
+
+                            // 找到收藏夹后，获取视频详细信息并显示选择界面
+                            showBiliVideoSelectionDialog(finalUid, fid, callback);
                         }
                     });
-                    dialog.dismiss();
                 } else {
                     Toast.makeText(this, "请检查 UID 是否正确", Toast.LENGTH_SHORT).show();
                 }
@@ -1964,6 +1951,204 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
         AlertDialog dialog = builder.create();
         dialog.show();
+    }
+
+    private void showBiliVideoSelectionDialog(String uid, String fid, myCallback<List<String>> callback) {
+        // 在UI线程中创建和显示对话框
+        runOnUiThread(() -> {
+            // 创建对话框视图
+            View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_bili_video_selection, null);
+            CheckBox cbSelectAll = dialogView.findViewById(R.id.cbSelectAll);
+            TextView tvSelectedCount = dialogView.findViewById(R.id.tvSelectedCount);
+            Button btnCancel = dialogView.findViewById(R.id.btnCancel);
+            Button btnConfirm = dialogView.findViewById(R.id.btnConfirm);
+            ListView lvVideos = dialogView.findViewById(R.id.lvBiliVideos);
+            ProgressBar loadMoreProgress = dialogView.findViewById(R.id.loadMoreProgress);
+
+            // 创建适配器
+            BiliVideoAdapter adapter = new BiliVideoAdapter(this);
+            lvVideos.setAdapter(adapter);
+
+            // 设置全选监听器
+            adapter.setOnSelectAllListener(shouldSelectAll -> {
+                cbSelectAll.setOnCheckedChangeListener(null);
+                cbSelectAll.setChecked(shouldSelectAll);
+                cbSelectAll.setOnCheckedChangeListener((buttonView, isChecked) -> adapter.selectAll(isChecked));
+            });
+
+            // 设置选择计数监听器
+            adapter.setOnItemSelectListener(selectedCount -> {
+                tvSelectedCount.setText(String.format(Locale.getDefault(), "已选择: %d", selectedCount));
+            });
+
+            // 设置全选复选框监听器
+            cbSelectAll.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                adapter.selectAll(isChecked);
+            });
+
+            // 创建对话框
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("选择视频");
+            builder.setView(dialogView);
+            builder.setCancelable(false);
+
+            AlertDialog videoDialog = builder.create();
+
+            // 设置取消按钮点击事件
+            btnCancel.setOnClickListener(v -> {
+                videoDialog.dismiss();
+                callback.onResult(null); // 取消则返回 null
+            });
+
+            // 设置确认按钮点击事件
+            btnConfirm.setOnClickListener(v -> {
+                List<BiliVideoAdapter.BiliVideoItem> selectedItems = adapter.getSelectedItems();
+                if (selectedItems.isEmpty()) {
+                    Toast.makeText(this, "请至少选择一个视频", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                // 提取所有选中视频的BV号
+                List<String> selectedBvids = new ArrayList<>();
+                for (BiliVideoAdapter.BiliVideoItem item : selectedItems) {
+                    selectedBvids.add(item.getBvid());
+                }
+
+                // 关闭对话框并返回结果
+                videoDialog.dismiss();
+                callback.onResult(selectedBvids);
+            });
+
+            // 显示对话框
+            videoDialog.show();
+
+            // 加载第一页数据
+            loadBiliVideoPage(uid, fid, 1, 20, adapter, lvVideos, loadMoreProgress);
+        });
+    }
+
+    private void loadBiliVideoPage(String uid, String fid, int pageNum, int pageSize,
+                                   BiliVideoAdapter adapter, ListView listView, ProgressBar loadMoreProgress) {
+        // 如果是第一页，显示进度对话框
+        if (pageNum == 1) {
+            if (dialogMessage != null) {
+                dialogMessage.setText("正在获取视频信息...");
+            }
+        } else {
+            // 如果是加载更多，显示底部进度条
+            runOnUiThread(() -> loadMoreProgress.setVisibility(View.VISIBLE));
+        }
+
+        OkHttpClient client = new OkHttpClient();
+        String url = String.format(Locale.getDefault(), "https://api.bilibili.com/x/v3/fav/resource/list?media_id=%s&pn=%d&ps=%d",
+                fid, pageNum, pageSize);
+
+        Request request = new Request.Builder()
+                .url(url)
+                .addHeader("User-Agent", "Mozilla/5.0")
+                .addHeader("Referer", "https://www.bilibili.com/")
+                .build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                Log.e("BiliCollection", "获取视频列表失败: " + e.getMessage());
+                runOnUiThread(() -> {
+                    if (pageNum == 1) {
+                        dismissProgressDialog();
+                    } else {
+                        loadMoreProgress.setVisibility(View.GONE);
+                    }
+                    Toast.makeText(MainActivity.this, "获取视频列表失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+            }
+
+            @Override
+            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                if (!response.isSuccessful()) {
+                    runOnUiThread(() -> {
+                        if (pageNum == 1) {
+                            dismissProgressDialog();
+                        } else {
+                            loadMoreProgress.setVisibility(View.GONE);
+                        }
+                        Toast.makeText(MainActivity.this, "获取视频列表失败: " + response.code(), Toast.LENGTH_SHORT).show();
+                    });
+                    return;
+                }
+
+                String json = response.body().string();
+                JsonObject jsonObj = JsonParser.parseString(json).getAsJsonObject();
+                JsonObject data = jsonObj.getAsJsonObject("data");
+                JsonArray medias = data.getAsJsonArray("medias");
+                boolean hasMore = data.get("has_more").getAsBoolean();
+
+                // 解析视频信息
+                List<BiliVideoAdapter.BiliVideoItem> videoItems = new ArrayList<>();
+                if (medias != null) {
+                    for (JsonElement media : medias) {
+                        JsonObject videoObj = media.getAsJsonObject();
+                        String bvid = videoObj.get("bvid").getAsString();
+                        String title = videoObj.get("title").getAsString();
+                        String uploader = videoObj.getAsJsonObject("upper").get("name").getAsString();
+                        int duration = videoObj.get("duration").getAsInt();
+
+                        // 失效视频后续无法获取，直接筛掉
+                        if (!Objects.equals(title, "已失效视频")) {
+                            BiliVideoAdapter.BiliVideoItem item = new BiliVideoAdapter.BiliVideoItem(
+                                    bvid, title, uploader, duration);
+                            videoItems.add(item);
+                        }
+                    }
+                }
+
+                // 在UI线程中更新列表
+                final boolean finalHasMore = hasMore;
+                final int finalPageNum = pageNum;
+                runOnUiThread(() -> {
+                    // 如果是第一页，关闭进度对话框
+                    if (finalPageNum == 1) {
+                        dismissProgressDialog();
+                    } else {
+                        loadMoreProgress.setVisibility(View.GONE);
+                    }
+
+                    // 添加数据到适配器
+                    adapter.addItems(videoItems);
+
+                    // 如果是第一次加载，设置滚动监听器
+                    if (finalPageNum == 1) {
+                        listView.setOnScrollListener(new AbsListView.OnScrollListener() {
+                            private int visibleThreshold = 5;
+                            private boolean loading = false;
+                            private int previousTotal = 0;
+
+                            @Override
+                            public void onScrollStateChanged(AbsListView view, int scrollState) {
+                            }
+
+                            @Override
+                            public void onScroll(AbsListView view, int firstVisibleItem, int visibleItemCount,
+                                                 int totalItemCount) {
+                                if (loading && totalItemCount > previousTotal) {
+                                    loading = false;
+                                    previousTotal = totalItemCount;
+                                }
+
+                                if (!loading
+                                        && (totalItemCount - visibleItemCount) <= (firstVisibleItem + visibleThreshold)
+                                        && finalHasMore) {
+                                    // 加载下一页
+                                    loading = true;
+                                    loadBiliVideoPage(uid, fid, finalPageNum + 1, pageSize, adapter, listView,
+                                            loadMoreProgress);
+                                }
+                            }
+                        });
+                    }
+                });
+            }
+        });
     }
 
     private void getBiliMusic(String bv, Context context, myCallback<Map<String, Object>> callback) {
@@ -1998,7 +2183,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 String coverUrl = json.get("pic").getAsString();
 
                 // Step 2: 获取音频 URL
-                HttpUrl url = Objects.requireNonNull(HttpUrl.parse("https://api.bilibili.com/x/player/playurl")).newBuilder()
+                HttpUrl url = Objects.requireNonNull(HttpUrl.parse("https://api.bilibili.com/x/player/playurl"))
+                        .newBuilder()
                         .addQueryParameter("bvid", bv)
                         .addQueryParameter("cid", String.valueOf(cid))
                         .addQueryParameter("fnval", "16")
@@ -2013,7 +2199,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 client.newCall(audioUrlReq).enqueue(new Callback() {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        runOnUiThread(() -> Toast.makeText(context, "获取音频URL失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                        runOnUiThread(() -> Toast.makeText(context, "获取音频URL失败: " + e.getMessage(), Toast.LENGTH_SHORT)
+                                .show());
                     }
 
                     @Override
@@ -2046,7 +2233,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                         client.newCall(downloadReq).enqueue(new Callback() {
                             @Override
                             public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                                runOnUiThread(() -> Toast.makeText(context, "下载失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                                runOnUiThread(() -> Toast
+                                        .makeText(context, "下载失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
                             }
 
                             @Override
@@ -2076,7 +2264,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                 } catch (IOException e) {
                                     Log.e("BiliMusic", "下载文件失败: ", e);
                                     callback.onResult(null); // 获取失败
-                                    runOnUiThread(() -> Toast.makeText(context, "下载失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                                    runOnUiThread(() -> Toast
+                                            .makeText(context, "下载失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
                                 }
                             }
                         });
@@ -2085,7 +2274,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             }
         });
     }
-
 
     private class MusicListItemClickListener implements AdapterView.OnItemClickListener {
         @Override
@@ -2104,9 +2292,9 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             selectSong = Song.fromMap(map);
             selectedPosition = position;
 
-            if (!selectSong.equals(song)) {//!selectSong.getName().equals(song.getName())
+            if (!selectSong.equals(song)) {// !selectSong.getName().equals(song.getName())
                 try {
-//                    musicPlayer.loadMusic(selectSong);
+                    // musicPlayer.loadMusic(selectSong);
                     playSongAt(position);
                 } catch (IOException e) {
                     throw new RuntimeException(e);
@@ -2143,7 +2331,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     }
                 }
             }
-//            song = selectSong;
+            // song = selectSong;
             boolean isCurrentSong = selectSong.equals(song);
             if (!isCurrentSong) {
                 ((BaseAdapter) lv.getAdapter()).notifyDataSetChanged();
@@ -2154,9 +2342,9 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     } else if (position - lv.getFirstVisiblePosition() <= 0) {
                         listview.setSelection(position - (lv.getChildCount() - 2));
                     }
-//                else if(position-lv.getFirstVisiblePosition() <= 0){
-//                    listview.setSelection(position);
-//                }
+                    // else if(position-lv.getFirstVisiblePosition() <= 0){
+                    // listview.setSelection(position);
+                    // }
                 } else {
                     listview.setSelection(position);
                 }
@@ -2175,7 +2363,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             try {
                 while (!Thread.currentThread().isInterrupted() && isProgressSyncRunning) {
                     // 检查 MediaPlayer 是否已释放
-                    if (musicPlayer.isStop() || musicPlayer.isReleased()) { //这段代码加上是为了防止吃内存导致缺页
+                    if (musicPlayer.isStop() || musicPlayer.isReleased()) { // 这段代码加上是为了防止吃内存导致缺页
                         break;
                     }
                     // 使用 musicPlayer 的公共方法获取数据，这里我已创建单例
@@ -2183,25 +2371,26 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     int totalDuration = musicPlayer.getDuration();
 
                     runOnUiThread(() -> {
-                        if (musicPlayer.isStop()) return;
+                        if (musicPlayer.isStop())
+                            return;
                         progressBar.setMax(totalDuration);
                         progressBar.setProgress(currentPosition);
                         preogress.setText(formatTime(currentPosition) + "/" + formatTime(totalDuration));
 
-//                        // 自动切换逻辑
-//                        if (currentPosition >= totalDuration - 50
-//                                && !isSongChanging
-//                                && !isAutoNextTriggered
-//                                && musicPlayer.getPlayStatus() == PlayerStatus.PLAYING
-//                                && !musicList.isEmpty()) {
-//                            isAutoNextTriggered = true;
-//                            Log.d("MainActivity", "自动切歌");
-//                            try {
-//                                playNextSong();
-//                            } catch (IOException e) {
-//                                throw new RuntimeException(e);
-//                            }
-//                        }
+                        // // 自动切换逻辑
+                        // if (currentPosition >= totalDuration - 50
+                        // && !isSongChanging
+                        // && !isAutoNextTriggered
+                        // && musicPlayer.getPlayStatus() == PlayerStatus.PLAYING
+                        // && !musicList.isEmpty()) {
+                        // isAutoNextTriggered = true;
+                        // Log.d("MainActivity", "自动切歌");
+                        // try {
+                        // playNextSong();
+                        // } catch (IOException e) {
+                        // throw new RuntimeException(e);
+                        // }
+                        // }
                     });
                     Thread.sleep(50);
                 }
