@@ -159,7 +159,7 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         // 删除所选
         btnDelete.setOnClickListener(v -> {
             List<Integer> selected = adapter.getSelectedIndices();
-            Collections.sort(selected, Collections.reverseOrder()); // 先删除后面的，防止下标错乱
+            selected.sort(Collections.reverseOrder()); // 先删除后面的，防止下标错乱
 
             for (int index : selected) {
                 Playlist p = playlists.get(index);
@@ -755,20 +755,48 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
 
     private void showCreateDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        final EditText input = new EditText(this);
+        EditText input = new EditText(this);
+        LinearLayout inputLayout = new LinearLayout(this);
+        inputLayout.setOrientation(LinearLayout.VERTICAL);
+        inputLayout.setPadding(50, 20, 50, 10);
+        inputLayout.addView(input);
+
         builder.setTitle("新建歌单")
-                .setView(input)
-                .setPositiveButton("确定", (dialog, which) -> {
-                    String name = input.getText().toString();
-                    Playlist newPlaylist = new Playlist(name, 0, R.drawable.default_playlist_cover);
-//                    playlists.add(newPlaylist);
-//                    adapter.notifyDataSetChanged();
-                    adapter.addPlaylist(newPlaylist);
-                    savePlaylist(); // 保存到文件或数据库
-                    updateAllSongCounts();
-                })
-                .setNegativeButton("取消", null)
-                .show();
+                .setView(inputLayout)
+                .setPositiveButton("确定", null) // 暂时设为null，在下面手动处理点击事件
+                .setNegativeButton("取消", null);
+
+        AlertDialog dialog = builder.create();
+        dialog.show();
+
+        // 实现判空和判重
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String name = input.getText().toString().trim();
+
+            if (name.isEmpty()) {
+                Toast.makeText(PlaylistListActivity.this, "歌单名称不能为空", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // 判重
+            boolean isDuplicate = false;
+            for (Playlist playlist : playlists) {
+                if (playlist.getName().equals(name)) {
+                    isDuplicate = true;
+                    break;
+                }
+            }
+
+            if (isDuplicate) {
+                Toast.makeText(PlaylistListActivity.this, "歌单名称已存在", Toast.LENGTH_SHORT).show();
+            } else {
+                Playlist newPlaylist = new Playlist(name, 0, R.drawable.default_playlist_cover);
+                adapter.addPlaylist(newPlaylist);
+                savePlaylist(); // 保存到文件或数据库
+                updateAllSongCounts();
+                dialog.dismiss(); // 关闭对话框
+            }
+        });
     }
 
     private void savePlaylist() {
