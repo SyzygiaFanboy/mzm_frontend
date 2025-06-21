@@ -18,7 +18,7 @@
         android:fitsSystemWindows="true"
         android:orientation="vertical">
 
-        <!-- 顶部合并后的Toolbar -->
+        <!-- 现有的Toolbar和其他内容保持不变 -->
         <androidx.appcompat.widget.Toolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
@@ -110,6 +110,14 @@
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1" />
+
+        <!-- 在LinearLayout的最后添加底部播放栏 -->
+        <include
+            android:id="@+id/bottom_player_container"
+            layout="@layout/bottom_player_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
     </LinearLayout>
 
     <!-- 侧边栏内容 -->
