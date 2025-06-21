@@ -62,6 +62,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import org.json.JSONObject;
+
 import android.widget.Button;
 
 import java.io.BufferedReader;
@@ -188,9 +190,9 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         }
         playBtn = findViewById(R.id.playerbutton);
         preogress = findViewById(R.id.textpreogress);
-        Button deletebtn = findViewById(R.id.removeMusic);
-        Button btnMoveUp = findViewById(R.id.btnMoveUp);
-        Button btnMoveDown = findViewById(R.id.btnMoveDown);
+//        Button deletebtn = findViewById(R.id.removeMusic);
+        ImageButton btnMoveUp = findViewById(R.id.btnMoveUp);
+        ImageButton btnMoveDown = findViewById(R.id.btnMoveDown);
         ImageButton btnBatchSelect = findViewById(R.id.btnBatchSelect);
         btnNext = findViewById(R.id.next);
         btnPrevious = findViewById(R.id.previous);
@@ -336,10 +338,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 }
             });
             if (isBatchMode) {
-                findViewById(R.id.moveButtons).setVisibility(View.GONE);
+                findViewById(R.id.btnMoveUp).setVisibility(View.VISIBLE);
+                findViewById(R.id.btnMoveDown).setVisibility(View.VISIBLE);
                 findViewById(R.id.btnBatchDelete).setVisibility(View.VISIBLE); // 显示批量删除按钮
             } else {
-                findViewById(R.id.moveButtons).setVisibility(View.VISIBLE);
+                findViewById(R.id.btnMoveUp).setVisibility(View.GONE);
+                findViewById(R.id.btnMoveDown).setVisibility(View.GONE);
                 findViewById(R.id.btnBatchDelete).setVisibility(View.GONE);
                 selectedPositions.clear();
             }
@@ -412,7 +416,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             ((BatchModeAdapter) listview.getAdapter()).setBatchMode(false);
             cbSelectAll.setVisibility(View.GONE); // 隐藏全选复选框
             cbSelectAll.setChecked(false); // 取消全选状态
-            findViewById(R.id.moveButtons).setVisibility(View.VISIBLE);
+            findViewById(R.id.btnMoveUp).setVisibility(View.VISIBLE);
+            findViewById(R.id.btnMoveDown).setVisibility(View.VISIBLE);
             findViewById(R.id.btnBatchDelete).setVisibility(View.GONE);
             if (musicList.isEmpty()) {
                 runOnUiThread(() -> {
@@ -487,24 +492,60 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         });
 
         btnMoveUp.setOnClickListener(v -> {
-            // 调用上移方法
-            moveSongUp(selectedPosition);
+            if (selectedPosition != -1 && selectedPosition > 0) {
+                // 上移逻辑
+                Collections.swap(musicList, selectedPosition, selectedPosition - 1);
+                selectedPosition--;
+                
+                // 更新歌曲索引
+                updateSongIndices();
+                
+                // 刷新适配器
+                ((BatchModeAdapter) listview.getAdapter()).notifyDataSetChanged();
+                
+                // 关键：设置新的选中状态
+                listview.setItemChecked(selectedPosition, true);
+                
+                // 滚动到新位置
+                listview.smoothScrollToPosition(selectedPosition);
+                
+                // 更新持久化存储
+                updatePersistentStorage();
+            }
         });
 
         btnMoveDown.setOnClickListener(v -> {
-            // 同理
-            moveSongDown(selectedPosition);
-        });
-        deletebtn.setOnClickListener(v -> {
-            if (selectedPosition == -1) {
-                Toast.makeText(MainActivity.this, "请先选择要删除的歌曲", Toast.LENGTH_SHORT).show();
-                return;
+            if (selectedPosition != -1 && selectedPosition < musicList.size() - 1) {
+                // 下移逻辑
+                Collections.swap(musicList, selectedPosition, selectedPosition + 1);
+                selectedPosition++;
+                
+                // 更新歌曲索引
+                updateSongIndices();
+                
+                // 刷新适配器
+                ((BatchModeAdapter) listview.getAdapter()).notifyDataSetChanged();
+                
+                // 关键：设置新的选中状态
+                listview.setItemChecked(selectedPosition, true);
+                
+                // 滚动到新位置
+                listview.smoothScrollToPosition(selectedPosition);
+                
+                // 更新持久化存储
+                updatePersistentStorage();
             }
-            showDeleteConfirmationDialog();
         });
+//        deletebtn.setOnClickListener(v -> {
+//            if (selectedPosition == -1) {
+//                Toast.makeText(MainActivity.this, "请先选择要删除的歌曲", Toast.LENGTH_SHORT).show();
+//                return;
+//            }
+//            showDeleteConfirmationDialog();
+//        });
 
         // 添加按钮
-        Button Addbtn = findViewById(R.id.addMusic);
+        ImageButton Addbtn = findViewById(R.id.addMusic);
         Addbtn.setOnClickListener(v -> {
             AlertDialog.Builder builder = new AlertDialog.Builder(this);
             builder.setTitle("选择添加方式");
@@ -773,8 +814,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         adapter.setBatchMode(isBatchMode);
         cbSelectAll.setVisibility(isBatchMode ? View.VISIBLE : View.GONE);
         cbSelectAll.setChecked(false);
-        findViewById(R.id.moveButtons).setVisibility(isBatchMode ? View.GONE : View.VISIBLE);
+        
+        // 修改：非管理模式下显示上移下移按钮，管理模式下隐藏
+        findViewById(R.id.btnMoveUp).setVisibility(isBatchMode ? View.GONE : View.VISIBLE);
+        findViewById(R.id.btnMoveDown).setVisibility(isBatchMode ? View.GONE : View.VISIBLE);
         findViewById(R.id.btnBatchDelete).setVisibility(isBatchMode ? View.VISIBLE : View.GONE);
+        
         if (!isBatchMode) {
             selectedPositions.clear();
             isAllSelected = false;
@@ -904,7 +949,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     }
 
     private void updatePersistentStorage() {
-        String currentPlaylist = this.currentPlaylist; // 确保你当前保存了选中的歌单名
+        String currentPlaylist = this.currentPlaylist;
         File file = MusicLoader.getMusicFile(this);
         List<String> allLines = new ArrayList<>();
 
@@ -913,27 +958,37 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 allLines = Files.readAllLines(file.toPath(), StandardCharsets.UTF_8);
             }
             List<String> kept = new ArrayList<>();
+            
+            // 保留其他歌单的数据
             for (String line : allLines) {
-                if (!line.startsWith(currentPlaylist + ",")) {
-                    kept.add(line);
+                try {
+                    JSONObject jsonObject = new JSONObject(line);
+                    String playlist = jsonObject.getString("playlist");
+                    if (!playlist.equals(currentPlaylist)) {
+                        kept.add(line);
+                    }
+                } catch (Exception e) {
+                    // 如果解析失败，跳过这行
+                    Log.e(TAG, "解析行失败: " + line, e);
                 }
             }
+            
+            // 添加当前歌单的数据（JSON格式）
             for (Map<String, Object> item : musicList) {
-                String playlist = (String) item.get("playlist");
-                String name = (String) item.get("name");
-                String formattedTime = (String) item.get("TimeDuration");
-                String filePath = (String) item.get("filePath");
-                String coverUrl = (String) item.get("coverUrl"); // coverUrlを取得
-                int duration = Song.parseTime(formattedTime);
-
-                // coverUrlがnullの場合は空文字列を使用
-                if (coverUrl == null) {
-                    coverUrl = "";
+                try {
+                    JSONObject jsonObject = new JSONObject();
+                    jsonObject.put("playlist", item.get("playlist"));
+                    jsonObject.put("duration", Song.parseTime((String) item.get("TimeDuration")));
+                    jsonObject.put("name", item.get("name"));
+                    jsonObject.put("filePath", item.get("filePath"));
+                    jsonObject.put("coverUrl", item.get("coverUrl") != null ? item.get("coverUrl") : "");
+                    
+                    kept.add(jsonObject.toString());
+                } catch (Exception e) {
+                    Log.e(TAG, "创建JSON失败", e);
                 }
-
-                String line = playlist + "," + duration + "," + name + "," + filePath + "," + coverUrl;
-                kept.add(line);
             }
+            
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Files.write(file.toPath(), kept, StandardCharsets.UTF_8);
             }
