@@ -25,6 +25,20 @@
             app:layout_constraintTop_toTopOf="parent"
             app:navigationIcon="@drawable/ic_arrow_back"/>
 
+        <!-- 添加歌曲按钮 - 移动到右上角 -->
+        <ImageButton
+            android:id="@+id/addMusic"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginEnd="16dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="添加歌曲"
+            android:scaleType="centerInside"
+            android:src="@drawable/add_song"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
         <!-- 背景图 -->
         <!--        <ImageView-->
         <!--            android:id="@+id/backgroundImage"-->
@@ -170,6 +184,30 @@
                 android:text="当前播放：暂无歌曲"
                 android:textSize="14sp" />
 
+            <!-- 上移按钮 - 移动到这里 -->
+            <ImageButton
+                android:id="@+id/btnMoveUp"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_marginEnd="4dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="上移"
+                android:scaleType="centerInside"
+                android:src="@drawable/arrow_upward"
+                android:visibility="visible" />
+
+            <!-- 下移按钮 - 移动到这里 -->
+            <ImageButton
+                android:id="@+id/btnMoveDown"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_marginEnd="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="下移"
+                android:scaleType="centerInside"
+                android:src="@drawable/arrow_downward"
+                android:visibility="visible" />
+
             <!-- 全选复选框（默认隐藏） -->
             <CheckBox
                 android:id="@+id/cbSelectAll"
@@ -188,7 +226,8 @@
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="删除选中"
                 android:scaleType="centerInside"
-                android:src="@drawable/ic_list_delete" />
+                android:src="@drawable/ic_list_delete"
+                android:visibility="gone" />
 
             <ImageButton
                 android:id="@+id/btnBatchSelect"
@@ -201,7 +240,7 @@
                 android:src="@drawable/ic_batch_select" />
         </LinearLayout>
 
-        <!-- 歌曲列表和操作按钮 -->
+        <!-- 歌曲列表 -->
         <ListView
             android:id="@+id/playlist"
             android:layout_width="0dp"
@@ -209,54 +248,10 @@
             android:layout_marginStart="16dp"
             android:layout_marginTop="16dp"
             android:layout_marginEnd="16dp"
-            app:layout_constraintBottom_toTopOf="@id/moveButtons"
+            android:layout_marginBottom="16dp"
+            app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/currentSongLayout" />
-
-        <!-- 添加/删除/上移/下移按钮 -->
-        <LinearLayout
-            android:id="@+id/moveButtons"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            android:gravity="center"
-            android:orientation="horizontal"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent">
-
-            <Button
-                android:id="@+id/addMusic"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="添加"
-                android:textSize="14sp" />
-
-            <Button
-                android:id="@+id/removeMusic"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:text="删除"
-                android:textSize="14sp" />
-
-            <Button
-                android:id="@+id/btnMoveUp"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:text="上移"
-                android:textSize="14sp" />
-
-            <Button
-                android:id="@+id/btnMoveDown"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:text="下移"
-                android:textSize="14sp" />
-
-        </LinearLayout>
     </androidx.constraintlayout.widget.ConstraintLayout>
 </androidx.drawerlayout.widget.DrawerLayout>
