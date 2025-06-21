@@ -1040,8 +1040,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         // 使用全局管理器
         GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
         globalManager.attachToActivity(this);
-        
-        globalManager.setOnBottomPlayerClickListener(new GlobalBottomPlayerManager.OnBottomPlayerClickListener() {
+
+        globalManager.setOnBottomPlayerClickListener(this, new GlobalBottomPlayerManager.OnBottomPlayerClickListener() {
             @Override
             public void onPlayPauseClick() {
                 // 与主播放按钮逻辑同步
@@ -1061,11 +1061,11 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     }
                 }
             }
-            
-            @Override
-            public void onPlayerBarClick() {
-                // 在MainActivity中点击底部栏不需要跳转
-            }
+
+//            @Override
+//            public void onPlayerBarClick() {
+//                // 在MainActivity中点击底部栏不需要跳转
+//            }
         });
     }
     
@@ -1236,7 +1236,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         super.onDestroy();
         // 从全局管理器中分离
         GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
-        globalManager.detachFromActivity();
+        globalManager.detachFromActivity(this);
     }
 
     @Override
@@ -1832,8 +1832,10 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         isSongChanging = false;
         musicPlayer.setCompletionLegitimate(true);
         
-        // 确保底部栏状态更新
-        updateAllPlayButtons();
+        // 确保底部栏状态更新 - 添加延迟确保状态已更新
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            updateAllPlayButtons();
+        }, 100);
     }
 
     // 下面的上一首按钮与下一首按钮将来有可能调整UI的时候会删除
@@ -1859,7 +1861,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         selectedPosition = nextPos;
         Map<String, Object> map = musicList.get(nextPos);
         selectSong = Song.fromMap(map);
-
+        
         playSongAt(nextPos);
         song = selectSong;
 
@@ -2521,6 +2523,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 playBtn.setText("暂停");
                 isResettingProgress = false;
                 updateAllPlayButtons();
+                
+                // // 添加延迟强制刷新
+                // new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                //     GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
+                //     globalManager.forceRefresh();
+                // }, 200);
 
 
             } else {
@@ -2538,6 +2546,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     }
                 }
                 updateAllPlayButtons();
+                
+                // 同样添加延迟强制刷新
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
+                    globalManager.forceRefresh();
+                }, 200);
 
             }
             // song = selectSong;

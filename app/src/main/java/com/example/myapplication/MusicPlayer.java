@@ -138,10 +138,8 @@ public class MusicPlayer {
             mp.start();
             startProgressUpdates();
             
-            // 添加这部分：通知播放状态变化
-            if (stateChangeListener != null) {
-                stateChangeListener.onPlaybackStateChanged();
-            }
+            // 修改这部分：通知所有播放状态变化监听器
+            notifyPlaybackStateChanged();
         });
         mediaPlayer.setOnCompletionListener(mp -> {
             playStatus = PlayerStatus.STOPPED;
@@ -173,9 +171,10 @@ public class MusicPlayer {
             Uri uri = Uri.parse(path);
             mediaPlayer.setDataSource(context, uri);
         }
-        if (stateChangeListener != null) {
-            stateChangeListener.onSongChanged();
-        }
+        
+        // 修改这部分：通知所有歌曲变化监听器
+        notifySongChanged();
+        
         // 异步准备，然后onPreparedListener 会被回调
         mediaPlayer.prepareAsync();
     }
@@ -251,10 +250,9 @@ public class MusicPlayer {
                     playStatus = PlayerStatus.PLAYING;
                     mediaPlayer.start();
                     startProgressUpdates();
+                    Log.d("MusicPlayer", "播放开始，通知监听器");
                     // 通知状态变化
                     notifyPlaybackStateChanged();
-                } else {
-                    //Log.e("MusicPlayer", "无法播放：播放器未准备就绪或为空");
                 }
             }
         } catch(IllegalStateException e) {
@@ -268,6 +266,7 @@ public void pause() {
     if (mediaPlayer != null && mediaPlayer.isPlaying()) {
         playStatus = PlayerStatus.PAUSED;
         mediaPlayer.pause();
+        Log.d("MusicPlayer", "播放暂停，通知监听器");
         // 使用新的多监听器通知方法
         notifyPlaybackStateChanged();
     }
