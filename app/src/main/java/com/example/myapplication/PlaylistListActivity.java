@@ -81,7 +81,7 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
     private ActivityResultLauncher<Intent> imagePickerLauncher;
     private int listBackgroundType = 0;
     private int currentBackgroundType = 0; // 等于 listBackgroundType: 歌单页面, 反之: 播放页面
-    private BottomPlayerBarManager bottomPlayerBarManager;
+    
     private MusicPlayer musicPlayer;
 
     @Override
@@ -240,28 +240,24 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
         globalManager.attachToActivity(this);
         
-        globalManager.setOnBottomPlayerClickListener(new GlobalBottomPlayerManager.OnBottomPlayerClickListener() {
-            @Override
-            public void onPlayPauseClick() {
-                // 控制播放状态
-                if (musicPlayer.isPlaying()) {
-                    musicPlayer.pause();
-                } else {
-                    musicPlayer.play();
-                }
+        globalManager.setOnBottomPlayerClickListener(this, () -> {
+            // 检查是否有当前歌曲
+            Song currentSong = musicPlayer.getCurrentSong();
+            if (currentSong == null) {
+                // 没有歌曲时，提示用户或跳转到有歌曲的歌单
+                Toast.makeText(PlaylistListActivity.this, "请先选择一首歌曲播放", Toast.LENGTH_SHORT).show();
+                return;
             }
-            
-            @Override
-            public void onPlayerBarClick() {
-                // 点击底部栏跳转到当前播放的歌单
-                Song currentSong = musicPlayer.getCurrentSong();
-                if (currentSong != null) {
-                    Intent intent = new Intent(PlaylistListActivity.this, MainActivity.class);
-                    intent.putExtra("playlist", "默认歌单");
-                    intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                    startActivity(intent);
-                }
+
+            // 有歌曲时正常处理播放/暂停
+            if (musicPlayer.isPlaying()) {
+                musicPlayer.pause();
+            } else {
+                musicPlayer.play();
             }
+            // 移除手动强制刷新，让监听器自动处理
+            // GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
+            // globalManager.forceRefresh();
         });
     }
     private void showSettingsDialog() {
@@ -733,13 +729,12 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
             String coverPath = MusicLoader.getLatestCoverForPlaylist(this, playlist.getName());
             playlist.setLatestCoverPath(coverPath);
         }
-        // 每次返回时重新应用背景
         applyBackgroundImage();
         if (adapter != null) {
             adapter.notifyDataSetChanged();
         }
         GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
-        globalManager.attachToActivity(this);
+        globalManager.attachToActivity(this);  // 添加这一行
         globalManager.forceRefresh();
     }
 
@@ -880,5 +875,10 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         adapter.notifyDataSetChanged(); // 更新 UI
     }
 
-
+    @Override
+    protected void onDestroy() {
+    super.onDestroy();
+    GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
+    globalManager.detachFromActivity(this);
+}
 }
