@@ -500,7 +500,7 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
             }
 
             // 确定文件名
-            String fileName = backgroundType == listBackgroundType ? "playlist_background.jpg" : "playback_background.jpg";
+            String fileName = (backgroundType == listBackgroundType) ? "playlist_background.jpg" : "playback_background.jpg";
             File backgroundFile = new File(backgroundDir, fileName);
 
             // 直接获取当前显示的背景图
@@ -519,7 +519,7 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
 
             // 保存设置到SharedPreferences
             SharedPreferences prefs = getSharedPreferences("background_prefs", MODE_PRIVATE);
-            String key = backgroundType == listBackgroundType ? "playlist_background_path" : "playback_background_path";
+            String key = (backgroundType == listBackgroundType) ? "playlist_background_path" : "playback_background_path";
             prefs.edit()
                     .putString(key, backgroundFile.getAbsolutePath())
                     .putInt(key + "_transparency", transparency)
@@ -839,6 +839,5 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         }
         adapter.notifyDataSetChanged(); // 更新 UI
     }
-
 
 }

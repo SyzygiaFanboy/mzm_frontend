@@ -41,126 +41,19 @@ public class MusicLoader {
         }
     }
 
-    //（必须是静态方法）
-//    public static List<Map<String, Object>> loadSongs(Context context, String targetPlaylist) {
-//        List<Map<String, Object>> list = new ArrayList<>();
-//        try (BufferedReader reader = new BufferedReader(new FileReader(getMusicFile(context)))) {
-//            String line;
-//            int index = 1;
-//            while ((line = reader.readLine()) != null) {
-//                try {
-//                    // 在 extractFirstElement 里分割元素
-//                    String playlist = extractFirstElement(line);
-//                    if (!playlist.equals(targetPlaylist)) {
-//                        continue;  // 如果不是目标歌单，跳过
-//                    }
-//
-//                    // 移除已提取的歌单名和第一个逗号
-//                    line = line.substring(playlist.length() + 1);
-//
-//                    // 提取持续时间
-//                    String durationStr = extractFirstElement(line);
-//                    int duration = Integer.parseInt(durationStr);
-//
-//                    // 移除已提取的持续时间和逗号
-//                    line = line.substring(durationStr.length() + 1);
-//
-//                    // 提取歌曲名称 - 查找最后一个content://开头的URI
-//                    int uriIndex = line.lastIndexOf("content://");
-//                    if (uriIndex == -1) {
-//                        // 尝试查找file://
-//                        uriIndex = line.lastIndexOf("file://");
-//                    }
-//
-//                    // 没有找到有效URI
-//                    if (uriIndex == -1) {
-//                        // 尝试使用最后一个逗号进行分割
-//                        int lastComma = line.lastIndexOf(",");
-//                        if (lastComma == -1) {
-//                            // 没有找到合法格式，跳过此行
-//                            Log.e(TAG, "无法解析的歌曲格式: " + line);
-//                            continue;
-//                        }
-//
-//                        String name = line.substring(0, lastComma).trim();
-//                        String uriString = line.substring(lastComma + 1).trim();
-//                        String coverUrl = "";  // 默认没有封面
-//
-//                        Song song = new Song(duration, name, uriString, playlist);
-//                        song.setCoverUrl(coverUrl);
-//                        list.add(song.toMap(index++));
-//                    } else {
-//                        // 查找URI前面的最后一个逗号
-//                        int nameEndIndex = line.substring(0, uriIndex).lastIndexOf(",");
-//                        if (nameEndIndex == -1) {
-//                            // 如果没有找到逗号，则整个URI前面的内容是歌名
-//                            nameEndIndex = uriIndex - 1;
-//                        }
-//
-//                        String name = line.substring(0, nameEndIndex + 1).trim();
-//                        // 移除歌名末尾可能的逗号
-//                        if (name.endsWith(",")) {
-//                            name = name.substring(0, name.length() - 1).trim();
-//                        }
-//
-//                        String remainingPart = line.substring(nameEndIndex + 1).trim();
-//                        // 提取URI和可能的coverUrl
-//                        int coverSeparator = remainingPart.indexOf(",", uriIndex);
-//                        String uriString;
-//                        String coverUrl = "";
-//
-//                        if (coverSeparator != -1) {
-//                            uriString = remainingPart.substring(0, coverSeparator).trim();
-//                            coverUrl = remainingPart.substring(coverSeparator + 1).trim();
-//                        } else {
-//                            uriString = remainingPart.trim();
-//                        }
-//
-//                        Song song = new Song(duration, name, uriString, playlist);
-//                        song.setCoverUrl(coverUrl);
-//                        list.add(song.toMap(index++));
-//                    }
-//                } catch (Exception e) {
-//                    Log.e(TAG, "解析歌曲行失败: " + line, e);
-//                }
-//            }
-//        } catch (IOException e) {
-//            Log.e(TAG, "加载歌曲列表失败: " + e.getMessage());
-//        }
-//        return list;
-//    }
-//
-//    // 辅助方法：提取以逗号分隔的第一个元素
-//    private static String extractFirstElement(String input) {
-//        int commaIndex = input.indexOf(',');
-//        if (commaIndex != -1) {
-//            return input.substring(0, commaIndex).trim();
-//        }
-//        return input.trim();
-//    }
-
-//    public static void appendMusic(Context context, Song song) {
-//        File file = getMusicFile(context);
-//        try (BufferedWriter bw = new BufferedWriter(new FileWriter(file, true))) {
-//            String coverUrl = song.getCoverUrl() != null ? song.getCoverUrl() : ""; // 获取 coverUrl，如果为 null 则为空字符串
-//            // 将 coverUrl 添加到要写入的行中
-//            String line = song.getPlaylist() + "," + song.getRawDuration() + "," + song.getName() + "," + song.getFilePath() + "," + coverUrl;
-//            bw.write(line);
-//            bw.newLine();
-//            bw.flush();
-//        } catch (IOException e) {
-//            Log.e(TAG, "写入失败: " + e.getMessage());
-//        }
-//    }
-
     public static List<Map<String, Object>> loadSongs(Context context, String targetPlaylist) {
+        File musicFile = getMusicFile(context);
         List<Map<String, Object>> list = new ArrayList<>();
-        try (BufferedReader reader = new BufferedReader(new FileReader(getMusicFile(context)))) {
+        List<String> validLines = new ArrayList<>();
+        boolean needCleanup = false;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(musicFile))) {
             String line;
             int index = 1;
             while ((line = reader.readLine()) != null) {
                 try {
                     JSONObject jsonObject = new JSONObject(line);
+                    validLines.add(line);
                     String playlist = jsonObject.getString("playlist");
 
                     // 检查是否是目标歌单
@@ -178,11 +71,25 @@ public class MusicLoader {
                     list.add(song.toMap(index++));
                 } catch (Exception e) {
                     Log.e(TAG, "解析歌曲行失败: " + line, e);
+                    needCleanup = true;
                 }
             }
         } catch (IOException e) {
             Log.e(TAG, "加载歌曲列表失败: " + e.getMessage());
         }
+
+        // 如果发现了无效行，删除它们
+        if (needCleanup) {
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(musicFile, false))) {
+                for (String validLine : validLines) {
+                    writer.write(validLine);
+                    writer.newLine();
+                }
+            } catch (IOException e) {
+                Log.e(TAG, "清理无效JSON行失败: " + e.getMessage());
+            }
+        }
+
         return list;
     }
 
