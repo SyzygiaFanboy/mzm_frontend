@@ -1343,48 +1343,49 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     return;
                 }
 
-                String[] parts = lastSongInfo.split(",", 5);
-                if (parts.length < 5) {
-                    sendPlaylistCoverUpdateBroadcast(playlistName);
-                    return;
-                }
+                // 改为JSON格式解析
+                try {
+                    JSONObject jsonObject = new JSONObject(lastSongInfo);
+                    String songName = jsonObject.getString("name");
+                    String coverUrl = jsonObject.optString("coverUrl", "");
 
-                String songName = parts[2].trim();
-                String coverUrl = parts[4].trim();
+                    if (coverUrl != null && !coverUrl.isEmpty() && !coverUrl.equals("null") && !coverUrl.equals("")) {
+                        // 为每首歌生成唯一的缓存文件名（基于歌曲名和URL的hash）
+                        String cacheFileName = "cover_" + Math.abs((songName + coverUrl).hashCode()) + ".jpg";
+                        File cacheFile = new File(getFilesDir(), cacheFileName);
 
-                if (coverUrl != null && !coverUrl.isEmpty() && !coverUrl.equals("null") && !coverUrl.equals("")) {
-                    // 为每首歌生成唯一的缓存文件名（基于歌曲名和URL的hash）
-                    String cacheFileName = "cover_" + Math.abs((songName + coverUrl).hashCode()) + ".jpg";
-                    File cacheFile = new File(getFilesDir(), cacheFileName);
+                        // 如果缓存文件不存在，下载并缓存
+                        if (!cacheFile.exists()) {
+                            try {
+                                java.net.URL url = new java.net.URL(coverUrl);
+                                java.net.HttpURLConnection connection = (java.net.HttpURLConnection) url.openConnection();
+                                connection.setDoInput(true);
+                                connection.connect();
+                                InputStream input = connection.getInputStream();
 
-                    // 如果缓存文件不存在，下载并缓存
-                    if (!cacheFile.exists()) {
-                        try {
-                            java.net.URL url = new java.net.URL(coverUrl);
-                            java.net.HttpURLConnection connection = (java.net.HttpURLConnection) url.openConnection();
-                            connection.setDoInput(true);
-                            connection.connect();
-                            InputStream input = connection.getInputStream();
+                                FileOutputStream output = new FileOutputStream(cacheFile);
+                                byte[] buffer = new byte[1024];
+                                int bytesRead;
+                                while ((bytesRead = input.read(buffer)) != -1) {
+                                    output.write(buffer, 0, bytesRead);
+                                }
+                                output.close();
+                                input.close();
 
-                            FileOutputStream output = new FileOutputStream(cacheFile);
-                            byte[] buffer = new byte[1024];
-                            int bytesRead;
-                            while ((bytesRead = input.read(buffer)) != -1) {
-                                output.write(buffer, 0, bytesRead);
+                                Log.d(TAG, "Bilibili音乐封面缓存成功: " + cacheFile.getAbsolutePath());
+                            } catch (Exception e) {
+                                Log.e(TAG, "下载Bilibili音乐封面失败: " + e.getMessage());
                             }
-                            output.close();
-                            input.close();
-
-                            Log.d(TAG, "Bilibili音乐封面缓存成功: " + cacheFile.getAbsolutePath());
-                        } catch (Exception e) {
-                            Log.e(TAG, "下载Bilibili音乐封面失败: " + e.getMessage());
                         }
-                    }
 
-                    // 下载完成后发送广播通知界面刷新
-                    sendPlaylistCoverUpdateBroadcast(playlistName);
-                } else {
-                    // 没有coverUrl，直接发送广播让界面刷新
+                        // 下载完成后发送广播通知界面刷新
+                        sendPlaylistCoverUpdateBroadcast(playlistName);
+                    } else {
+                        // 没有coverUrl，直接发送广播让界面刷新
+                        sendPlaylistCoverUpdateBroadcast(playlistName);
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "解析歌曲JSON失败: " + e.getMessage());
                     sendPlaylistCoverUpdateBroadcast(playlistName);
                 }
             } catch (Exception e) {
@@ -1414,9 +1415,15 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(file));
             String line;
             while ((line = reader.readLine()) != null) {
-                String[] parts = line.split(",", 2);
-                if (parts.length >= 2 && parts[0].trim().equals(playlistName)) {
-                    lastSong = line;
+                try {
+                    // 改为JSON格式解析，与MusicLoader.getLatestCoverForPlaylist保持一致
+                    JSONObject jsonObject = new JSONObject(line);
+                    String playlist = jsonObject.getString("playlist");
+                    if (playlist.equals(playlistName)) {
+                        lastSong = line; // 返回完整的JSON字符串
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "解析JSON失败: " + line, e);
                 }
             }
             reader.close();
