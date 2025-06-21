@@ -3,6 +3,7 @@ package com.example.myapplication;
 import static android.content.ContentValues.TAG;
 
 import android.annotation.SuppressLint;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -26,12 +27,8 @@ import android.view.View;
 import android.widget.AbsListView;
 import android.widget.AdapterView;
 import android.widget.BaseAdapter;
+import android.widget.Button;
 import android.widget.CheckBox;
-
-import androidx.activity.EdgeToEdge;
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -42,8 +39,10 @@ import android.widget.RadioGroup;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.app.AlertDialog;
 
+import androidx.activity.EdgeToEdge;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import androidx.core.graphics.Insets;
@@ -54,7 +53,6 @@ import androidx.lifecycle.ViewModelProvider;
 import com.example.myapplication.adapter.BatchModeAdapter;
 import com.example.myapplication.adapter.BiliVideoAdapter;
 import com.example.myapplication.model.MusicViewModel;
-import com.example.myapplication.model.Playlist;
 import com.example.myapplication.model.Song;
 import com.example.myapplication.utils.ImageCacheManager;
 import com.google.gson.JsonArray;
@@ -62,7 +60,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
-import android.widget.Button;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -70,11 +69,16 @@ import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
@@ -692,7 +696,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     private String formatTime(int milliseconds) {
         int seconds = (milliseconds / 1000) % 60;
         int minutes = (milliseconds / (1000 * 60)) % 60;
-        return String.format(Locale.getDefault(),"%02d:%02d", minutes, seconds);
+        return String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds);
     }
 
     private void deleteAllSongs() {
@@ -1280,24 +1284,23 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     private void updatePlaylistCover(String playlistName) {
         new Thread(() -> {
             try {
-                // 获取歌单中最后一首歌的信息
-                String lastSongInfo = getLastSongInPlaylist(playlistName);
-                if (lastSongInfo == null) {
+                String songInfo = getFirstSongInPlaylist(playlistName);
+                if (songInfo == null) {
                     // 如果没有歌曲，直接发送广播让界面刷新
                     sendPlaylistCoverUpdateBroadcast(playlistName);
                     return;
                 }
 
-                String[] parts = lastSongInfo.split(",", 5);
-                if (parts.length < 5) {
+                JSONObject json = new JSONObject(songInfo);
+                if (!json.has("coverUrl")) {
                     sendPlaylistCoverUpdateBroadcast(playlistName);
                     return;
                 }
 
-                String songName = parts[2].trim();
-                String coverUrl = parts[4].trim();
+                String songName = json.get("name").toString();
+                String coverUrl = json.get("coverUrl").toString();
 
-                if (coverUrl != null && !coverUrl.isEmpty() && !coverUrl.equals("null") && !coverUrl.equals("")) {
+                if (!coverUrl.isEmpty() && !coverUrl.equals("null")) {
                     // 为每首歌生成唯一的缓存文件名（基于歌曲名和URL的hash）
                     String cacheFileName = "cover_" + Math.abs((songName + coverUrl).hashCode()) + ".jpg";
                     File cacheFile = new File(getFilesDir(), cacheFileName);
@@ -1349,25 +1352,37 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         });
     }
 
-    private String getLastSongInPlaylist(String playlistName) {
+    /**
+     * 因为改成了在文件开头插入，获取第一首歌就行
+     *
+     * @param playlistName 歌单名称
+     * @return 第一首歌曲的JSON字符串，没有找到为null
+     */
+    private String getFirstSongInPlaylist(String playlistName) {
         try {
             File file = MusicLoader.getMusicFile(this);
             if (!file.exists())
                 return null;
 
-            String lastSong = null;
-            java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(file));
+            String firstSong = null;
+            BufferedReader reader = new BufferedReader(new FileReader(file));
             String line;
             while ((line = reader.readLine()) != null) {
-                String[] parts = line.split(",", 2);
-                if (parts.length >= 2 && parts[0].trim().equals(playlistName)) {
-                    lastSong = line;
+                try {
+                    JSONObject json = new JSONObject(line);
+                    if (json.has("playlist") && json.getString("playlist").equals(playlistName)) {
+                        firstSong = line;
+                        break;
+                    }
+                } catch (JSONException e) {
+                    Log.e(TAG, "解析JSON失败: " + e.getMessage());
                 }
             }
+
             reader.close();
-            return lastSong;
+            return firstSong;
         } catch (Exception e) {
-            Log.e(TAG, "获取最后一首歌失败: " + e.getMessage());
+            Log.e(TAG, "获取第一首歌失败: " + e.getMessage());
             return null;
         }
     }

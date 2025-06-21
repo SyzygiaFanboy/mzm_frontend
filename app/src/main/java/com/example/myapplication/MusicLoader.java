@@ -93,21 +93,56 @@ public class MusicLoader {
         return list;
     }
 
+    /**
+     * 在文件开头插入新歌曲
+     *
+     * @param context 用于获取路径的上下文
+     * @param song    要插入的歌曲
+     */
     public static void appendMusic(Context context, Song song) {
         File file = getMusicFile(context);
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(file, true))) {
-            JSONObject jsonObject = new JSONObject();
-            jsonObject.put("playlist", song.getPlaylist());
-            jsonObject.put("duration", song.getRawDuration());
-            jsonObject.put("name", song.getName());
-            jsonObject.put("filePath", song.getFilePath());
-            jsonObject.put("coverUrl", song.getCoverUrl() != null ? song.getCoverUrl() : "");
+        File tempFile = new File(context.getFilesDir(), FILE_NAME + ".temp");
 
-            bw.write(jsonObject.toString());
-            bw.newLine();
-            bw.flush();
+        try {
+            // 创建临时文件并写入新歌曲
+            try (BufferedWriter tempWriter = new BufferedWriter(new FileWriter(tempFile))) {
+                // 首先写入新歌曲
+                JSONObject jsonObject = new JSONObject();
+                jsonObject.put("playlist", song.getPlaylist());
+                jsonObject.put("duration", song.getRawDuration());
+                jsonObject.put("name", song.getName());
+                jsonObject.put("filePath", song.getFilePath());
+                jsonObject.put("coverUrl", song.getCoverUrl() != null ? song.getCoverUrl() : "");
+
+                tempWriter.write(jsonObject.toString());
+                tempWriter.newLine();
+
+                // 如果原文件存在，复制原有内容
+                if (file.exists()) {
+                    try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            tempWriter.write(line);
+                            tempWriter.newLine();
+                        }
+                    }
+                }
+            }
+
+            // 删除原文件
+            if (file.exists()) {
+                file.delete();
+            }
+
+            // 重命名临时文件
+            tempFile.renameTo(file);
+
         } catch (Exception e) {
-            Log.e(TAG, "写入失败: " + e.getMessage());
+            Log.e(TAG, "在文件开头插入歌曲失败: " + e.getMessage());
+            // 清理临时文件
+            if (tempFile.exists()) {
+                tempFile.delete();
+            }
         }
     }
 
