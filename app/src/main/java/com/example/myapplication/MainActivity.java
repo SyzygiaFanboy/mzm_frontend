@@ -116,6 +116,10 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     static ListView listview = null;
     private long lastSongChangeTime = 0;
     private long lastClickTime = 0;
+    private long lastNextClickTime = 0;
+    private long lastPreviousClickTime = 0;
+    private boolean isProcessingNext = false;
+    private boolean isProcessingPrevious = false;
     private volatile boolean isResettingProgress = false;
     private volatile boolean shouldTerminate = false;
     private boolean isAutoNextTriggered = false;
@@ -123,7 +127,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     private static final int PICK_MUSIC_REQUEST = 1;
     private String currentPlaylist;
     private boolean isAutoTriggeredByCompletion = false;
-
     // 进度加载弹窗的成员变量
     private AlertDialog progressDialog;
     private ProgressBar dialogProgressBar;
@@ -175,19 +178,34 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         EdgeToEdge.enable(this);
-        Song song = new Song(0, "暂无歌曲", "", "");
         setContentView(R.layout.activity_main);
-        // musicPlayer = new MusicPlayer(this);
+        
+        // 获取全局MusicPlayer实例
         musicPlayer = ((MyApp) getApplication()).getMusicPlayer();
         musicPlayer.setOnSongCompletionListener(this);
 
         // 应用播放页面背景
         applyPlaybackBackground();
-        try {
-            musicPlayer.loadMusic(song);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+        
+        // 检查是否有歌曲正在播放
+        Song currentPlayingSong = musicPlayer.getCurrentSong();
+        boolean isCurrentlyPlaying = musicPlayer.isPlaying() || musicPlayer.isPaused();
+        
+        // 如果没有歌曲在播放，加载默认歌曲
+        if (currentPlayingSong == null) {
+            Song defaultSong = new Song(0, "暂无歌曲", "", "");
+            try {
+                musicPlayer.loadMusic(defaultSong);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            song = defaultSong;
+        } else {
+            // 如果有歌曲在播放，保持当前状态
+            song = currentPlayingSong;
         }
+        
+        // 初始化UI组件
         playBtn = findViewById(R.id.playerbutton);
         preogress = findViewById(R.id.textpreogress);
 //        Button deletebtn = findViewById(R.id.removeMusic);
@@ -197,25 +215,43 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         btnNext = findViewById(R.id.next);
         btnPrevious = findViewById(R.id.previous);
         progressBar = findViewById(R.id.progressBar);
-        progressBar.setMax(song.getTimeDuration());
         listview = findViewById(R.id.playlist);
         albumArt = findViewById(R.id.albumArt);
-        // listview = findViewById(R.id.playlist);
+        
         listview.setChoiceMode(ListView.CHOICE_MODE_SINGLE);
         listview.setOnItemClickListener(new MusicListItemClickListener());
-        // MusicLoader.initMusicFile(this);
-        // playBtn = findViewById(R.id.playerbutton);
-        playBtn.setEnabled(false);
-        playBtn.setText(musicPlayer.getPlayStatus() == PlayerStatus.PLAYING ? "暂停" : "播放");
+        
+        // 根据当前播放状态设置UI
+        if (isCurrentlyPlaying) {
+            playBtn.setEnabled(true);
+            playBtn.setText(musicPlayer.isPlaying() ? "暂停" : "播放");
+            progressBar.setMax(song.getTimeDuration());
+            // 保持当前进度
+            TextView currentSongTV = findViewById(R.id.currentSong);
+            currentSongTV.setText(song.getName());
+            loadMusicCover(song.getFilePath());
+        } else {
+            playBtn.setEnabled(false);
+            playBtn.setText("播放");
+            progressBar.setMax(song.getTimeDuration());
+            progressBar.setProgress(0);
+        }
+        
         MusicViewModel viewModel = new ViewModelProvider(this).get(MusicViewModel.class);
+        
+        // 获取要显示的歌单
+        currentPlaylist = getIntent().getStringExtra("playlist");
+        if (currentPlaylist == null)
+            currentPlaylist = "默认歌单";
+        
+        // 加载歌单但不影响播放状态
+        loadMusicList(listview, currentPlaylist);
+        
         if (musicList.isEmpty()) {
             btnNext.setEnabled(false);
             btnPrevious.setEnabled(false);
         }
-        currentPlaylist = getIntent().getStringExtra("playlist");
-        if (currentPlaylist == null)
-            currentPlaylist = "默认歌单";
-        loadMusicList(listview, currentPlaylist);
+        
         updateNavButtons();
         // // 绑定返回歌单按钮
         // Button btnBackToPlaylists = findViewById(R.id.menu_back_to_playlists);
@@ -237,30 +273,22 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         });
 
         playBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (musicPlayer.isPlaying()) {
-                    // 如果当前正在播放，则切换到暂停状态
-                    switchPlayStatus(PlayerStatus.PAUSED);
-                    playBtn.setText("播放");
-                } else {
-                    // 如果是暂停或者停止状态，则播放
-                    // 如果处于停止状态，重新加载音乐
-                    if (musicPlayer.getPlayStatus() == PlayerStatus.STOPPED) {
-                        try {
-                            musicPlayer.loadMusic(song);
-                        } catch (IOException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }
-                    musicPlayer.play();
-                    playBtn.setText("暂停");
-                    switchPlayStatus(PlayerStatus.PLAYING);
-                    // 启动进度同步线程，保证只有一个线程在更新进度条
-                    new Thread(new ProgressSync()).start();
+    @Override
+    public void onClick(View v) {
+        if (musicPlayer.isPlaying()) {
+            switchPlayStatus(PlayerStatus.PAUSED);
+        } else {
+            if (musicPlayer.getPlayStatus() == PlayerStatus.STOPPED) {
+                try {
+                    musicPlayer.loadMusic(song);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
                 }
             }
-        });
+            switchPlayStatus(PlayerStatus.PLAYING);
+        }
+    }
+});
 
         // // 退出按钮监听
         // findViewById(R.id.menu_logout).setOnClickListener(v -> {
@@ -697,6 +725,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
             return insets;
         });
+        initBottomPlayerBar();
     }
 
     // 回调
@@ -707,6 +736,9 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             try {
                 if (!musicList.isEmpty()) {
                     playNextSong();
+                    new Handler().postDelayed(() -> {
+                        updateAllPlayButtons();
+                    }, 100); // 延迟100ms确保播放状态已更新
                 }
             } catch (IOException e) {
                 throw new RuntimeException(e);
@@ -890,6 +922,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         // 播放新歌曲
         selectedPosition = newPosition;
         playSongAt(selectedPosition);
+        updateAllPlayButtons();
     }
 
     private void moveSongUp(int position) {// 字面意思
@@ -1002,7 +1035,65 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         btnNext.setEnabled(hasItems);
         btnPrevious.setEnabled(hasItems);
     }
-
+    
+    private void initBottomPlayerBar() {
+        // 使用全局管理器
+        GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
+        globalManager.attachToActivity(this);
+        
+        globalManager.setOnBottomPlayerClickListener(new GlobalBottomPlayerManager.OnBottomPlayerClickListener() {
+            @Override
+            public void onPlayPauseClick() {
+                // 与主播放按钮逻辑同步
+                if (musicPlayer.isPlaying()) {
+                    switchPlayStatus(PlayerStatus.PAUSED);
+                } else {
+                    if (musicPlayer.getPlayStatus() == PlayerStatus.STOPPED) {
+                        try {
+                            if (selectedPosition >= 0 && selectedPosition < musicList.size()) {
+                                playSongAt(selectedPosition);
+                            }
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    } else {
+                        switchPlayStatus(PlayerStatus.PLAYING);
+                    }
+                }
+            }
+            
+            @Override
+            public void onPlayerBarClick() {
+                // 在MainActivity中点击底部栏不需要跳转
+            }
+        });
+    }
+    
+    // 添加方法来更新所有播放按钮状态
+    private void updateAllPlayButtons() {
+        GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
+        globalManager.forceRefresh();
+    }
+    
+    // 修改现有的switchPlayStatus方法，添加底部栏更新
+    private void switchPlayStatus(PlayerStatus status) {
+        switch (status) {
+            case PLAYING:
+                musicPlayer.play();
+                playBtn.setText("暂停");
+                break;
+            case PAUSED:
+                musicPlayer.pause();
+                playBtn.setText("播放");
+                break;
+            case STOPPED:
+                musicPlayer.stop();
+                playBtn.setText("播放");
+                break;
+        }
+        GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
+        globalManager.forceRefresh();
+    }
     // 这个函数可能会用到，别删
     public void refreshPlaylist() {
         // 重新从文件加载最新数据
@@ -1133,6 +1224,19 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         super.onResume();
         // 每次返回时重新应用背景，以防用户更改了设置
         applyPlaybackBackground();
+        
+        // 强制刷新底部播放栏状态
+        GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
+        globalManager.attachToActivity(this);
+        globalManager.forceRefresh();
+    }
+    
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // 从全局管理器中分离
+        GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
+        globalManager.detachFromActivity();
     }
 
     @Override
@@ -1594,9 +1698,27 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     }
 
     private void loadMusicList(ListView listview, String playlist) {
+        // 保存当前播放的歌曲信息
+        Song currentPlayingSong = musicPlayer.getCurrentSong();
+        boolean wasPlaying = musicPlayer.isPlaying();
+        boolean wasPaused = musicPlayer.isPaused();
+        
+        // 加载新歌单的歌曲列表
         musicList = MusicLoader.loadSongs(this, playlist);
         for (Map<String, Object> item : musicList) {
             item.put("isSelected", false);
+        }
+
+        // 如果有歌曲正在播放，检查是否在当前歌单中
+        if (currentPlayingSong != null && (wasPlaying || wasPaused)) {
+            // 查找当前播放歌曲在新歌单中的位置
+            for (int i = 0; i < musicList.size(); i++) {
+                Song songInList = Song.fromMap(musicList.get(i));
+                if (songInList.equals(currentPlayingSong)) {
+                    selectedPosition = i;
+                    break;
+                }
+            }
         }
 
         // 单例模式初始化适配器
@@ -1610,8 +1732,15 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     new int[]{R.id.seq, R.id.musicname, R.id.musiclength, R.id.cbSelect});
             listview.setAdapter(adapter);
         } else {
+            adapter = (BatchModeAdapter) listview.getAdapter();
             adapter.setData(musicList);
-            ((BatchModeAdapter) listview.getAdapter()).notifyDataSetChanged();
+            adapter.notifyDataSetChanged();
+        }
+        
+        // 如果当前播放的歌曲在新歌单中，高亮显示
+        if (selectedPosition >= 0 && selectedPosition < musicList.size()) {
+            listview.setItemChecked(selectedPosition, true);
+            listview.smoothScrollToPosition(selectedPosition);
         }
     }
 
@@ -1639,9 +1768,10 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             Toast.makeText(this, "无效的歌曲位置", Toast.LENGTH_SHORT).show();
             return;
         }
-        isAutoNextTriggered = false; // 重置自动触发标志
+        isAutoNextTriggered = false;
         isAutoTriggeredByCompletion = true;
         isSongChanging = true;
+        
         if (musicPlayer.isPlaying() || musicPlayer.isPaused()) {
             musicPlayer.stop();
         }
@@ -1649,11 +1779,10 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         // 获取歌曲对象
         Map<String, Object> songMap = musicList.get(index);
         Song songToPlay = Song.fromMap(songMap);
-        // 检查文件是否存在
+        
         if (!isFileValid(songToPlay.getFilePath())) {
             runOnUiThread(() -> {
                 Toast.makeText(this, "歌曲文件不存在或无法访问", Toast.LENGTH_SHORT).show();
-                // 从列表中移除无效项
                 musicList.remove(index);
                 ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
             });
@@ -1663,9 +1792,11 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         // 加载并播放歌曲
         musicPlayer.loadMusic(songToPlay);
         musicPlayer.setCurrentPositiontozero();
+        
+        // 关键修改：实际启动播放并设置正确状态
+        musicPlayer.play();  // 添加这行
+        
         ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
-
-        // 更新ListView的选中状态
         listview.setItemChecked(index, true);
         listview.smoothScrollToPosition(index);
 
@@ -1675,13 +1806,13 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             progressBar.setMax(songToPlay.getTimeDuration());
             progressBar.setProgress(0);
             preogress.setText("0");
-            playBtn.setText("暂停");
+            playBtn.setText("暂停");  // 现在这个设置是正确的，因为确实在播放
         });
 
-        // 更新当前播放歌曲，并加载封面
         song = songToPlay;
         selectSong = songToPlay;
         loadMusicCover(songToPlay.getFilePath());
+        
         TextView currentSongTV = findViewById(R.id.currentSong);
         currentSongTV.setText(songToPlay.getName());
 
@@ -1695,10 +1826,14 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 e.printStackTrace();
             }
         }
+
         progressSyncThread = new Thread(new ProgressSync());
         progressSyncThread.start();
         isSongChanging = false;
         musicPlayer.setCompletionLegitimate(true);
+        
+        // 确保底部栏状态更新
+        updateAllPlayButtons();
     }
 
     // 下面的上一首按钮与下一首按钮将来有可能调整UI的时候会删除
@@ -1746,6 +1881,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             progressSyncThread.interrupt();
         }
         new Thread(new ProgressSync()).start();
+        updateAllPlayButtons();
 
     }
 
@@ -1796,25 +1932,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             progressSyncThread.interrupt();
         }
         new Thread(new ProgressSync()).start();
-    }
+        updateAllPlayButtons();
 
-    // 更改歌曲播放状态
-    private void switchPlayStatus(PlayerStatus status) {
-        switch (status) {
-            case PLAYING:
-                playBtn.setText("暂停");
-                musicPlayer.play();
-                break;
-            case PAUSED:
-                playBtn.setText("播放");
-                musicPlayer.pause();
-                break;
-            case STOPPED:
-                playBtn.setText("播放");
-                musicPlayer.stop();
-                // 注意，接下来修改的时候不要在这里重置进度条，由播放器回调处理
-                break;
-        }
     }
 
     private void showBiliDialog(myCallback<String> callback) {
@@ -2401,6 +2520,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 preogress.setText("0");
                 playBtn.setText("暂停");
                 isResettingProgress = false;
+                updateAllPlayButtons();
+
 
             } else {
                 if (musicPlayer.isPlaying()) {
@@ -2416,6 +2537,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                         throw new RuntimeException(e);
                     }
                 }
+                updateAllPlayButtons();
+
             }
             // song = selectSong;
             boolean isCurrentSong = selectSong.equals(song);

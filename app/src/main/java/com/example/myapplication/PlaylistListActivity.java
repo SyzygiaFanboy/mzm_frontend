@@ -54,6 +54,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.example.myapplication.adapter.PlaylistItemTouchHelperCallback;
 import com.example.myapplication.adapter.PlaylistRecyclerAdapter;
 import com.example.myapplication.model.Playlist;
+import com.example.myapplication.model.Song;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -65,7 +66,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-
+import android.os.Handler;
 public class PlaylistListActivity extends AppCompatActivity implements PlaylistRecyclerAdapter.OnStartDragListener {
     private List<Playlist> playlists = new ArrayList<>();
     private PlaylistRecyclerAdapter adapter;
@@ -80,6 +81,8 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
     private ActivityResultLauncher<Intent> imagePickerLauncher;
     private int listBackgroundType = 0;
     private int currentBackgroundType = 0; // 等于 listBackgroundType: 歌单页面, 反之: 播放页面
+    private BottomPlayerBarManager bottomPlayerBarManager;
+    private MusicPlayer musicPlayer;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -120,10 +123,13 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         itemTouchHelper.attachToRecyclerView(recyclerView);
 
         // 设置点击监听
+        // 设置点击监听
         adapter.setOnItemClickListener(position -> {
             String selected = playlists.get(position).getName();
             Intent intent = new Intent(this, MainActivity.class);
             intent.putExtra("playlist", selected);
+            // 添加标志以重用现有实例
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             startActivity(intent);
         });
 
@@ -225,8 +231,39 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
 
         // 应用保存的背景图片
         applyBackgroundImage();
+        musicPlayer = ((MyApp) getApplication()).getMusicPlayer();
+        // 初始化底部播放栏
+        initBottomPlayerBar();
     }
-
+    private void initBottomPlayerBar() {
+        // 使用全局管理器
+        GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
+        globalManager.attachToActivity(this);
+        
+        globalManager.setOnBottomPlayerClickListener(new GlobalBottomPlayerManager.OnBottomPlayerClickListener() {
+            @Override
+            public void onPlayPauseClick() {
+                // 控制播放状态
+                if (musicPlayer.isPlaying()) {
+                    musicPlayer.pause();
+                } else {
+                    musicPlayer.play();
+                }
+            }
+            
+            @Override
+            public void onPlayerBarClick() {
+                // 点击底部栏跳转到当前播放的歌单
+                Song currentSong = musicPlayer.getCurrentSong();
+                if (currentSong != null) {
+                    Intent intent = new Intent(PlaylistListActivity.this, MainActivity.class);
+                    intent.putExtra("playlist", "默认歌单");
+                    intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    startActivity(intent);
+                }
+            }
+        });
+    }
     private void showSettingsDialog() {
         // 史山魅力时刻：根据 currentBackgroundType 来修改歌单还是播放页背景。存 listBackgroundType 好自由修改选项位置
         String[] options = {"设置歌单页面背景", "设置播放页面背景", "恢复默认背景"};
@@ -701,6 +738,9 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         if (adapter != null) {
             adapter.notifyDataSetChanged();
         }
+        GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
+        globalManager.attachToActivity(this);
+        globalManager.forceRefresh();
     }
 
     private void confirmAndDeletePlaylist(String name, int pos) {
