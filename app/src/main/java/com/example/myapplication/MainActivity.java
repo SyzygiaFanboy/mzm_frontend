@@ -165,7 +165,11 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 return;
             }
         }
-        musicList.add(song.toMap(musicList.size() + 1));
+
+        // 添加到第一个并更新索引
+        musicList.add(0, song.toMap(1));
+        updateSongIndices();
+
         Log.d("PathCheck", "当前路径: " + song.getFilePath());
         for (Map<String, Object> item : musicList) {
             Log.d("PathCheck", "已存在路径: " + item.get("filePath"));
@@ -381,7 +385,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                         musicPlayer.release(); // 释放资源（如果MusicPlayer有该方法）
                     }
                     progressBar.setProgress(0);
-                    preogress.setText("00:00");
+                    preogress.setText("请选择歌曲");
                     albumArt.setImageResource(R.drawable.default_cover);
                     TextView currentSongTV = findViewById(R.id.currentSong);
                     currentSongTV.setText("当前播放：暂无歌曲");
@@ -901,7 +905,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     }
 
     // 遍历 musicList 更新每项的 index
-    private void updateSongIndices() {
+    private static void updateSongIndices() {
         for (int i = 0; i < musicList.size(); i++) {
             musicList.get(i).put("index", i + 1);
         }
@@ -917,27 +921,54 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 allLines = Files.readAllLines(file.toPath(), StandardCharsets.UTF_8);
             }
             List<String> kept = new ArrayList<>();
+
+            // 保留不属于当前歌单的所有歌曲
             for (String line : allLines) {
-                if (!line.startsWith(currentPlaylist + ",")) {
-                    kept.add(line);
+                try {
+                    JSONObject jsonObject = new JSONObject(line);
+                    String playlist = jsonObject.getString("playlist");
+                    if (!playlist.equals(currentPlaylist)) {
+                        kept.add(line);
+                    }
+                } catch (JSONException e) {
+                    // 可能是旧格式的行，或者解析错误，直接保留
+                    if (!line.startsWith(currentPlaylist + ",")) {
+                        kept.add(line);
+                    }
                 }
             }
+
+            // 添加当前歌单的所有歌曲
             for (Map<String, Object> item : musicList) {
                 String playlist = (String) item.get("playlist");
                 String name = (String) item.get("name");
                 String formattedTime = (String) item.get("TimeDuration");
                 String filePath = (String) item.get("filePath");
-                String coverUrl = (String) item.get("coverUrl"); // coverUrlを取得
+                String coverUrl = (String) item.get("coverUrl");
                 int duration = Song.parseTime(formattedTime);
 
-                // coverUrlがnullの場合は空文字列を使用
+                // coverUrl 如果为 null，则使用空字符串
                 if (coverUrl == null) {
                     coverUrl = "";
                 }
 
-                String line = playlist + "," + duration + "," + name + "," + filePath + "," + coverUrl;
-                kept.add(line);
+                // 创建 JSON 对象并写入字段
+                JSONObject jsonObject = new JSONObject();
+                try {
+                    jsonObject.put("playlist", playlist);
+                    jsonObject.put("duration", duration);
+                    jsonObject.put("name", name);
+                    jsonObject.put("filePath", filePath);
+                    jsonObject.put("coverUrl", coverUrl);
+
+                    // 将 JSON 对象转换为字符串并添加到列表中
+                    kept.add(jsonObject.toString());
+                } catch (JSONException e) {
+                    Log.e(TAG, "创建歌曲 JSON 对象失败: " + e.getMessage());
+                }
             }
+
+            // 将所有行写回文件
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Files.write(file.toPath(), kept, StandardCharsets.UTF_8);
             }
@@ -1249,9 +1280,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 if (!newSongs.isEmpty()) {
                     for (Song song : newSongs) {
                         MusicLoader.appendMusic(this, song);
-                        Map<String, Object> songMap = song.toMap(musicList.size() + 1);
-                        songMap.put("isSelected", false);
-                        musicList.add(songMap);
+                        addSongToPlaylist(song);
                     }
                     BatchModeAdapter adapter = (BatchModeAdapter) listview.getAdapter();
                     if (adapter != null) {
