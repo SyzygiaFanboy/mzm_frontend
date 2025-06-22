@@ -46,7 +46,10 @@ public class SearchActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_search);
+        
         currentPlaylist = getIntent().getStringExtra("current_playlist");
+        String fromActivity = getIntent().getStringExtra("from_activity");
+        
         if (currentPlaylist == null) {
             currentPlaylist = "默认歌单";
         }
@@ -60,7 +63,16 @@ public class SearchActivity extends AppCompatActivity {
 //        ImageButton btnBack = findViewById(R.id.btn_back);
 //        btnBack.setOnClickListener(v -> finish());
         Toolbar toolbar = findViewById(R.id.toolbar_search);
-        toolbar.setNavigationOnClickListener(v -> finish());
+        toolbar.setNavigationOnClickListener(v -> {
+            // 根据来源页面决定返回行为
+            if ("MainActivity".equals(fromActivity)) {
+                // 从播放页面进入，返回播放页面
+                Intent intent = new Intent(this, MainActivity.class);
+                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                startActivity(intent);
+            }
+            finish();
+        });
         btnSearch.setOnClickListener(v -> new SearchTask().execute());
         btnConfirm.setOnClickListener(v -> {
             boolean anySelected = false;
