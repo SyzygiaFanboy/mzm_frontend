@@ -3,6 +3,7 @@ package com.example.myapplication;
 import static android.content.ContentValues.TAG;
 
 import android.annotation.SuppressLint;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -26,12 +27,8 @@ import android.view.View;
 import android.widget.AbsListView;
 import android.widget.AdapterView;
 import android.widget.BaseAdapter;
+import android.widget.Button;
 import android.widget.CheckBox;
-
-import androidx.activity.EdgeToEdge;
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -42,8 +39,10 @@ import android.widget.RadioGroup;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.app.AlertDialog;
 
+import androidx.activity.EdgeToEdge;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import androidx.core.graphics.Insets;
@@ -54,7 +53,6 @@ import androidx.lifecycle.ViewModelProvider;
 import com.example.myapplication.adapter.BatchModeAdapter;
 import com.example.myapplication.adapter.BiliVideoAdapter;
 import com.example.myapplication.model.MusicViewModel;
-import com.example.myapplication.model.Playlist;
 import com.example.myapplication.model.Song;
 import com.example.myapplication.utils.ImageCacheManager;
 import com.google.gson.JsonArray;
@@ -62,9 +60,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import org.json.JSONException;
 import org.json.JSONObject;
-
-import android.widget.Button;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -72,11 +69,16 @@ import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
@@ -166,7 +168,11 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 return;
             }
         }
-        musicList.add(song.toMap(musicList.size() + 1));
+
+        // 添加到第一个并更新索引
+        musicList.add(0, song.toMap(1));
+        updateSongIndices();
+
         Log.d("PathCheck", "当前路径: " + song.getFilePath());
         for (Map<String, Object> item : musicList) {
             Log.d("PathCheck", "已存在路径: " + item.get("filePath"));
@@ -179,18 +185,18 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         super.onCreate(savedInstanceState);
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
-        
+
         // 获取全局MusicPlayer实例
         musicPlayer = ((MyApp) getApplication()).getMusicPlayer();
         musicPlayer.setOnSongCompletionListener(this);
 
         // 应用播放页面背景
         applyPlaybackBackground();
-        
+
         // 检查是否有歌曲正在播放
         Song currentPlayingSong = musicPlayer.getCurrentSong();
         boolean isCurrentlyPlaying = musicPlayer.isPlaying() || musicPlayer.isPaused();
-        
+
         // 如果没有歌曲在播放，加载默认歌曲
         if (currentPlayingSong == null) {
             Song defaultSong = new Song(0, "暂无歌曲", "", "");
@@ -204,7 +210,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             // 如果有歌曲在播放，保持当前状态
             song = currentPlayingSong;
         }
-        
+
         // 初始化UI组件
         playBtn = findViewById(R.id.playerbutton);
         preogress = findViewById(R.id.textpreogress);
@@ -217,10 +223,10 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         progressBar = findViewById(R.id.progressBar);
         listview = findViewById(R.id.playlist);
         albumArt = findViewById(R.id.albumArt);
-        
+
         listview.setChoiceMode(ListView.CHOICE_MODE_SINGLE);
         listview.setOnItemClickListener(new MusicListItemClickListener());
-        
+
         // 根据当前播放状态设置UI
         if (isCurrentlyPlaying) {
             playBtn.setEnabled(true);
@@ -236,22 +242,22 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             progressBar.setMax(song.getTimeDuration());
             progressBar.setProgress(0);
         }
-        
+
         MusicViewModel viewModel = new ViewModelProvider(this).get(MusicViewModel.class);
-        
+
         // 获取要显示的歌单
         currentPlaylist = getIntent().getStringExtra("playlist");
         if (currentPlaylist == null)
             currentPlaylist = "默认歌单";
-        
+
         // 加载歌单但不影响播放状态
         loadMusicList(listview, currentPlaylist);
-        
+
         if (musicList.isEmpty()) {
             btnNext.setEnabled(false);
             btnPrevious.setEnabled(false);
         }
-        
+
         updateNavButtons();
         // // 绑定返回歌单按钮
         // Button btnBackToPlaylists = findViewById(R.id.menu_back_to_playlists);
@@ -273,22 +279,22 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         });
 
         playBtn.setOnClickListener(new View.OnClickListener() {
-    @Override
-    public void onClick(View v) {
-        if (musicPlayer.isPlaying()) {
-            switchPlayStatus(PlayerStatus.PAUSED);
-        } else {
-            if (musicPlayer.getPlayStatus() == PlayerStatus.STOPPED) {
-                try {
-                    musicPlayer.loadMusic(song);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
+            @Override
+            public void onClick(View v) {
+                if (musicPlayer.isPlaying()) {
+                    switchPlayStatus(PlayerStatus.PAUSED);
+                } else {
+                    if (musicPlayer.getPlayStatus() == PlayerStatus.STOPPED) {
+                        try {
+                            musicPlayer.loadMusic(song);
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+                    switchPlayStatus(PlayerStatus.PLAYING);
                 }
             }
-            switchPlayStatus(PlayerStatus.PLAYING);
-        }
-    }
-});
+        });
 
         // // 退出按钮监听
         // findViewById(R.id.menu_logout).setOnClickListener(v -> {
@@ -409,7 +415,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                         musicPlayer.release(); // 释放资源（如果MusicPlayer有该方法）
                     }
                     progressBar.setProgress(0);
-                    preogress.setText("00:00");
+                    preogress.setText("请选择歌曲");
                     albumArt.setImageResource(R.drawable.default_cover);
                     TextView currentSongTV = findViewById(R.id.currentSong);
                     currentSongTV.setText("当前播放：暂无歌曲");
@@ -524,19 +530,19 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 // 上移逻辑
                 Collections.swap(musicList, selectedPosition, selectedPosition - 1);
                 selectedPosition--;
-                
+
                 // 更新歌曲索引
                 updateSongIndices();
-                
+
                 // 刷新适配器
                 ((BatchModeAdapter) listview.getAdapter()).notifyDataSetChanged();
-                
+
                 // 关键：设置新的选中状态
                 listview.setItemChecked(selectedPosition, true);
-                
+
                 // 滚动到新位置
                 listview.smoothScrollToPosition(selectedPosition);
-                
+
                 // 更新持久化存储
                 updatePersistentStorage();
             }
@@ -547,19 +553,19 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 // 下移逻辑
                 Collections.swap(musicList, selectedPosition, selectedPosition + 1);
                 selectedPosition++;
-                
+
                 // 更新歌曲索引
                 updateSongIndices();
-                
+
                 // 刷新适配器
                 ((BatchModeAdapter) listview.getAdapter()).notifyDataSetChanged();
-                
+
                 // 关键：设置新的选中状态
                 listview.setItemChecked(selectedPosition, true);
-                
+
                 // 滚动到新位置
                 listview.smoothScrollToPosition(selectedPosition);
-                
+
                 // 更新持久化存储
                 updatePersistentStorage();
             }
@@ -765,7 +771,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     private String formatTime(int milliseconds) {
         int seconds = (milliseconds / 1000) % 60;
         int minutes = (milliseconds / (1000 * 60)) % 60;
-        return String.format(Locale.getDefault(),"%02d:%02d", minutes, seconds);
+        return String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds);
     }
 
     private void deleteAllSongs() {
@@ -846,12 +852,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         adapter.setBatchMode(isBatchMode);
         cbSelectAll.setVisibility(isBatchMode ? View.VISIBLE : View.GONE);
         cbSelectAll.setChecked(false);
-        
+
         // 修改：非管理模式下显示上移下移按钮，管理模式下隐藏
         findViewById(R.id.btnMoveUp).setVisibility(isBatchMode ? View.GONE : View.VISIBLE);
         findViewById(R.id.btnMoveDown).setVisibility(isBatchMode ? View.GONE : View.VISIBLE);
         findViewById(R.id.btnBatchDelete).setVisibility(isBatchMode ? View.VISIBLE : View.GONE);
-        
+
         if (!isBatchMode) {
             selectedPositions.clear();
             isAllSelected = false;
@@ -975,7 +981,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     }
 
     // 遍历 musicList 更新每项的 index
-    private void updateSongIndices() {
+    private static void updateSongIndices() {
         for (int i = 0; i < musicList.size(); i++) {
             musicList.get(i).put("index", i + 1);
         }
@@ -991,7 +997,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 allLines = Files.readAllLines(file.toPath(), StandardCharsets.UTF_8);
             }
             List<String> kept = new ArrayList<>();
-            
             // 保留其他歌单的数据
             for (String line : allLines) {
                 try {
@@ -1005,7 +1010,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     Log.e(TAG, "解析行失败: " + line, e);
                 }
             }
-            
+
             // 添加当前歌单的数据（JSON格式）
             for (Map<String, Object> item : musicList) {
                 try {
@@ -1015,13 +1020,13 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     jsonObject.put("name", item.get("name"));
                     jsonObject.put("filePath", item.get("filePath"));
                     jsonObject.put("coverUrl", item.get("coverUrl") != null ? item.get("coverUrl") : "");
-                    
+
                     kept.add(jsonObject.toString());
                 } catch (Exception e) {
                     Log.e(TAG, "创建JSON失败", e);
                 }
             }
-            
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Files.write(file.toPath(), kept, StandardCharsets.UTF_8);
             }
@@ -1035,7 +1040,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         btnNext.setEnabled(hasItems);
         btnPrevious.setEnabled(hasItems);
     }
-    
+
     private void initBottomPlayerBar() {
         // 使用全局管理器
         GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
@@ -1068,13 +1073,13 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 //            }
         });
     }
-    
+
     // 添加方法来更新所有播放按钮状态
     private void updateAllPlayButtons() {
         GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
         globalManager.forceRefresh();
     }
-    
+
     // 修改现有的switchPlayStatus方法，添加底部栏更新
     private void switchPlayStatus(PlayerStatus status) {
         switch (status) {
@@ -1094,6 +1099,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
         globalManager.forceRefresh();
     }
+
     // 这个函数可能会用到，别删
     public void refreshPlaylist() {
         // 重新从文件加载最新数据
@@ -1224,13 +1230,13 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         super.onResume();
         // 每次返回时重新应用背景，以防用户更改了设置
         applyPlaybackBackground();
-        
+
         // 强制刷新底部播放栏状态
         GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
         globalManager.attachToActivity(this);
         globalManager.forceRefresh();
     }
-    
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
@@ -1404,9 +1410,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 if (!newSongs.isEmpty()) {
                     for (Song song : newSongs) {
                         MusicLoader.appendMusic(this, song);
-                        Map<String, Object> songMap = song.toMap(musicList.size() + 1);
-                        songMap.put("isSelected", false);
-                        musicList.add(songMap);
+                        addSongToPlaylist(song);
                     }
                     BatchModeAdapter adapter = (BatchModeAdapter) listview.getAdapter();
                     if (adapter != null) {
@@ -1439,21 +1443,18 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     private void updatePlaylistCover(String playlistName) {
         new Thread(() -> {
             try {
-                // 获取歌单中最后一首歌的信息
-                String lastSongInfo = getLastSongInPlaylist(playlistName);
-                if (lastSongInfo == null) {
+                String songInfo = getFirstSongInPlaylist(playlistName);
+                if (songInfo == null) {
                     // 如果没有歌曲，直接发送广播让界面刷新
                     sendPlaylistCoverUpdateBroadcast(playlistName);
                     return;
                 }
-
-                // 改为JSON格式解析
                 try {
-                    JSONObject jsonObject = new JSONObject(lastSongInfo);
+                    JSONObject jsonObject = new JSONObject(songInfo);
                     String songName = jsonObject.getString("name");
                     String coverUrl = jsonObject.optString("coverUrl", "");
 
-                    if (coverUrl != null && !coverUrl.isEmpty() && !coverUrl.equals("null") && !coverUrl.equals("")) {
+                    if (!coverUrl.isEmpty() && !coverUrl.equals("null")) {
                         // 为每首歌生成唯一的缓存文件名（基于歌曲名和URL的hash）
                         String cacheFileName = "cover_" + Math.abs((songName + coverUrl).hashCode()) + ".jpg";
                         File cacheFile = new File(getFilesDir(), cacheFileName);
@@ -1481,21 +1482,16 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                 Log.e(TAG, "下载Bilibili音乐封面失败: " + e.getMessage());
                             }
                         }
-
-                        // 下载完成后发送广播通知界面刷新
-                        sendPlaylistCoverUpdateBroadcast(playlistName);
-                    } else {
-                        // 没有coverUrl，直接发送广播让界面刷新
-                        sendPlaylistCoverUpdateBroadcast(playlistName);
                     }
                 } catch (Exception e) {
                     Log.e(TAG, "解析歌曲JSON失败: " + e.getMessage());
-                    sendPlaylistCoverUpdateBroadcast(playlistName);
                 }
             } catch (Exception e) {
                 Log.e(TAG, "更新歌单封面失败: " + e.getMessage());
-                sendPlaylistCoverUpdateBroadcast(playlistName);
             }
+
+            // 完成后发送广播通知界面刷新
+            sendPlaylistCoverUpdateBroadcast(playlistName);
         }).start();
     }
 
@@ -1509,31 +1505,37 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         });
     }
 
-    private String getLastSongInPlaylist(String playlistName) {
+    /**
+     * 因为改成了在文件开头插入，获取第一首歌就行
+     *
+     * @param playlistName 歌单名称
+     * @return 第一首歌曲的JSON字符串，没有找到为null
+     */
+    private String getFirstSongInPlaylist(String playlistName) {
         try {
             File file = MusicLoader.getMusicFile(this);
             if (!file.exists())
                 return null;
 
-            String lastSong = null;
-            java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(file));
+            String firstSong = null;
+            BufferedReader reader = new BufferedReader(new FileReader(file));
             String line;
             while ((line = reader.readLine()) != null) {
                 try {
-                    // 改为JSON格式解析，与MusicLoader.getLatestCoverForPlaylist保持一致
-                    JSONObject jsonObject = new JSONObject(line);
-                    String playlist = jsonObject.getString("playlist");
-                    if (playlist.equals(playlistName)) {
-                        lastSong = line; // 返回完整的JSON字符串
+                    JSONObject json = new JSONObject(line);
+                    if (json.has("playlist") && json.getString("playlist").equals(playlistName)) {
+                        firstSong = line;
+                        break;
                     }
-                } catch (Exception e) {
-                    Log.e(TAG, "解析JSON失败: " + line, e);
+                } catch (JSONException e) {
+                    Log.e(TAG, "解析JSON失败: " + e.getMessage());
                 }
             }
+
             reader.close();
-            return lastSong;
+            return firstSong;
         } catch (Exception e) {
-            Log.e(TAG, "获取最后一首歌失败: " + e.getMessage());
+            Log.e(TAG, "获取第一首歌失败: " + e.getMessage());
             return null;
         }
     }
@@ -1702,7 +1704,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         Song currentPlayingSong = musicPlayer.getCurrentSong();
         boolean wasPlaying = musicPlayer.isPlaying();
         boolean wasPaused = musicPlayer.isPaused();
-        
+
         // 加载新歌单的歌曲列表
         musicList = MusicLoader.loadSongs(this, playlist);
         for (Map<String, Object> item : musicList) {
@@ -1736,7 +1738,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             adapter.setData(musicList);
             adapter.notifyDataSetChanged();
         }
-        
+
         // 如果当前播放的歌曲在新歌单中，高亮显示
         if (selectedPosition >= 0 && selectedPosition < musicList.size()) {
             listview.setItemChecked(selectedPosition, true);
@@ -1771,7 +1773,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         isAutoNextTriggered = false;
         isAutoTriggeredByCompletion = true;
         isSongChanging = true;
-        
+
         if (musicPlayer.isPlaying() || musicPlayer.isPaused()) {
             musicPlayer.stop();
         }
@@ -1779,7 +1781,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         // 获取歌曲对象
         Map<String, Object> songMap = musicList.get(index);
         Song songToPlay = Song.fromMap(songMap);
-        
+
         if (!isFileValid(songToPlay.getFilePath())) {
             runOnUiThread(() -> {
                 Toast.makeText(this, "歌曲文件不存在或无法访问", Toast.LENGTH_SHORT).show();
@@ -1792,10 +1794,10 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         // 加载并播放歌曲
         musicPlayer.loadMusic(songToPlay);
         musicPlayer.setCurrentPositiontozero();
-        
+
         // 关键修改：实际启动播放并设置正确状态
         musicPlayer.play();  // 添加这行
-        
+
         ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
         listview.setItemChecked(index, true);
         listview.smoothScrollToPosition(index);
@@ -1812,7 +1814,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         song = songToPlay;
         selectSong = songToPlay;
         loadMusicCover(songToPlay.getFilePath());
-        
+
         TextView currentSongTV = findViewById(R.id.currentSong);
         currentSongTV.setText(songToPlay.getName());
 
@@ -1831,7 +1833,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         progressSyncThread.start();
         isSongChanging = false;
         musicPlayer.setCompletionLegitimate(true);
-        
+
         // 确保底部栏状态更新 - 添加延迟确保状态已更新
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             updateAllPlayButtons();
@@ -1861,7 +1863,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         selectedPosition = nextPos;
         Map<String, Object> map = musicList.get(nextPos);
         selectSong = Song.fromMap(map);
-        
+
         playSongAt(nextPos);
         song = selectSong;
 
@@ -2523,7 +2525,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 playBtn.setText("暂停");
                 isResettingProgress = false;
                 updateAllPlayButtons();
-                
+
                 // // 添加延迟强制刷新
                 // new Handler(Looper.getMainLooper()).postDelayed(() -> {
                 //     GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
@@ -2546,7 +2548,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     }
                 }
                 updateAllPlayButtons();
-                
+
                 // 同样添加延迟强制刷新
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
                     GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
