@@ -135,7 +135,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     private TextView dialogMessage;
 
     private static final int REQUEST_CODE_STORAGE_PERMISSION = 100;
-
     private static final int REQUEST_CODE_SEARCH = 1001; // 请求码
 
     private AtomicBoolean isSyncActive = new AtomicBoolean(false);
@@ -574,8 +573,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             AlertDialog.Builder builder = new AlertDialog.Builder(this);
             builder.setTitle("选择添加方式");
 
-            // 设置选项
-            String[] options = {"从本地添加", "从BV号 / 链接添加", "从B站收藏夹添加"};
+            // 设置选项 - 添加"搜索在线音乐"选项
+            String[] options = {"从本地添加", "从BV号 / 链接添加", "从B站收藏夹添加", "搜索在线音乐"};
             builder.setItems(options, (dialog, which) -> {
                 if (which == 0) {
                     // 添加本地音乐
@@ -706,6 +705,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                             }
                         }
                     }));
+                } else if (which == 3) {
+                    // 搜索在线音乐
+                    Intent intent = new Intent(MainActivity.this, SearchActivity.class);
+                    intent.putExtra("current_playlist", currentPlaylist); // 传递当前歌单名称
+                    intent.putExtra("from_activity", "MainActivity"); // 标记来源页面
+                    startActivityForResult(intent, REQUEST_CODE_SEARCH);
                 }
             });
 

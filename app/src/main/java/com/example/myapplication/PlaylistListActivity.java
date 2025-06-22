@@ -94,6 +94,11 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         RecyclerView recyclerView = findViewById(R.id.rvPlaylists);
         ImageButton btnNew = findViewById(R.id.btnNewPlaylist);
         ImageButton btnDelete = findViewById(R.id.btnDeletePlaylist);
+        ImageButton btnUpload = findViewById(R.id.btnUpload);
+        btnUpload.setOnClickListener(v -> {
+            Intent intent = new Intent(PlaylistListActivity.this, UploadActivity.class);
+            startActivity(intent);
+        });
         ImageButton btnMore = findViewById(R.id.btnMore);
         ConstraintLayout manageBar = findViewById(R.id.manageBar);
         CheckBox cbSelectAll = findViewById(R.id.cbSelectAll);
@@ -194,11 +199,14 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
             toolbar.setNavigationIcon(navIcon);
         }
 
+        // 注释掉或删除原有的搜索在线音乐按钮点击事件
+        /*
         findViewById(R.id.menu_search).setOnClickListener(v -> {
             Intent intent = new Intent(this, SearchActivity.class);
             startActivityForResult(intent, REQUEST_CODE_SEARCH);
             drawerLayout.closeDrawer(GravityCompat.START);
         });
+        */
         findViewById(R.id.menu_logout).setOnClickListener(v -> {
             SharedPreferences preferences = getSharedPreferences("user_pref", MODE_PRIVATE);
             preferences.edit().putBoolean("is_logged_in", false).apply();
