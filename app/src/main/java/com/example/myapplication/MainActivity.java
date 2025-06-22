@@ -260,40 +260,29 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         }
 
         updateNavButtons();
-        // // 绑定返回歌单按钮
-        // Button btnBackToPlaylists = findViewById(R.id.menu_back_to_playlists);
-        // btnBackToPlaylists.setOnClickListener(v -> {
-        // // 跳转到歌单列表页面，可以看看怎么改
-        // Intent intent = new Intent(MainActivity.this, PlaylistListActivity.class);
-        // startActivity(intent);
-        // finish();
-        // });
+
+        // 左上角的返回按钮 toolbar
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
         if (getSupportActionBar() != null) {
             getSupportActionBar().setDisplayShowTitleEnabled(false);
         }
         toolbar.setNavigationOnClickListener(v -> {
-            Intent intent = new Intent(MainActivity.this, PlaylistListActivity.class);
-            startActivity(intent);
-            finish();
+            getOnBackPressedDispatcher().onBackPressed(); // 触发系统的返回操作，效果与按下返回键相同
         });
 
-        playBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (musicPlayer.isPlaying()) {
-                    switchPlayStatus(PlayerStatus.PAUSED);
-                } else {
-                    if (musicPlayer.getPlayStatus() == PlayerStatus.STOPPED) {
-                        try {
-                            musicPlayer.loadMusic(song);
-                        } catch (IOException e) {
-                            throw new RuntimeException(e);
-                        }
+        playBtn.setOnClickListener(v -> {
+            if (musicPlayer.isPlaying()) {
+                switchPlayStatus(PlayerStatus.PAUSED);
+            } else {
+                if (musicPlayer.getPlayStatus() == PlayerStatus.STOPPED) {
+                    try {
+                        musicPlayer.loadMusic(song);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
                     }
-                    switchPlayStatus(PlayerStatus.PLAYING);
                 }
+                switchPlayStatus(PlayerStatus.PLAYING);
             }
         });
 
