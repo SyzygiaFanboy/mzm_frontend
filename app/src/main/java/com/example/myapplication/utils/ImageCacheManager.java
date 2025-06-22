@@ -10,7 +10,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
@@ -125,7 +124,7 @@ public class ImageCacheManager {
     /**
      * 生成缓存key
      */
-    private String generateKey(String url) {
+    public String generateKey(String url) {
         try {
             MessageDigest md = MessageDigest.getInstance("MD5");
             byte[] digest = md.digest(url.getBytes());

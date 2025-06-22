@@ -237,23 +237,24 @@ public class MusicLoader {
 
         try {
             JSONObject jsonObject = new JSONObject(songInfo);
-            String songName = jsonObject.getString("name");
             String filePath = jsonObject.getString("filePath");
             String coverUrl = jsonObject.optString("coverUrl", "");
 
             // 如果第一首歌是Bilibili音乐（有coverUrl）
             if (!coverUrl.isEmpty() && !coverUrl.equals("null")) {
-                // 生成对应的缓存文件名
-                String cacheFileName = "cover_" + Math.abs((songName + coverUrl).hashCode()) + ".jpg";
-                File cacheFile = new File(context.getFilesDir(), cacheFileName);
+                // 首先检查ImageCacheManager是否有缓存该URL的图片
+                String cacheKey = com.example.myapplication.utils.ImageCacheManager.getInstance(context).generateKey(coverUrl);
+                File diskCacheDir = new File(context.getExternalFilesDir(null), "image_cache");
+                File cachedFile = new File(diskCacheDir, cacheKey + ".jpg");
 
-                if (cacheFile.exists()) {
-                    Log.d(TAG, "找到歌单 " + playlistName + " 第一首歌的缓存封面: " + cacheFile.getAbsolutePath());
-                    return cacheFile.getAbsolutePath();
-                } else {
-                    Log.d(TAG, "歌单 " + playlistName + " 第一首歌的缓存封面不存在，返回网络URL: " + coverUrl);
-                    return coverUrl; // 返回网络URL作为备选
+                if (cachedFile.exists()) {
+                    Log.d(TAG, "在ImageCacheManager中找到封面缓存: " + cachedFile.getAbsolutePath());
+                    return cachedFile.getAbsolutePath();
                 }
+
+                // 如果没有缓存，返回网络URL让系统去下载
+                Log.d(TAG, "没有找到封面缓存，返回网络URL: " + coverUrl);
+                return coverUrl;
             } else {
                 // 如果第一首歌是本地音乐，返回文件路径用于提取嵌入封面
                 Log.d(TAG, "歌单 " + playlistName + " 第一首歌是本地音乐: " + filePath);
