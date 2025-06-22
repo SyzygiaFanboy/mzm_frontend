@@ -168,23 +168,23 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
 
         // 添加正在播放歌单的高亮效果
         if (currentPlayingPlaylist != null && currentPlayingPlaylist.equals(playlist.getName())) {
-            
             holder.itemView.setBackgroundColor(android.graphics.Color.parseColor("#c69bc5"));
-            
             holder.tvName.setTextColor(context.getResources().getColor(android.R.color.white, null));
             holder.tvCount.setTextColor(context.getResources().getColor(android.R.color.white, null));
         } else {
-            
             android.util.TypedValue typedValue = new android.util.TypedValue();
             context.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, typedValue, true);
             holder.itemView.setBackgroundResource(typedValue.resourceId);
             
-            // 恢复默认文字颜色（与播放列表逻辑相同）
+            // 修复：使用正确的方式获取默认文字颜色
             android.util.TypedValue textColorValue = new android.util.TypedValue();
             context.getTheme().resolveAttribute(android.R.attr.textColorPrimary, textColorValue, true);
-            holder.tvName.setTextColor(textColorValue.data);
+            int primaryColor = context.getResources().getColor(textColorValue.resourceId, context.getTheme());
+            holder.tvName.setTextColor(primaryColor);
+            
             context.getTheme().resolveAttribute(android.R.attr.textColorSecondary, textColorValue, true);
-            holder.tvCount.setTextColor(textColorValue.data);
+            int secondaryColor = context.getResources().getColor(textColorValue.resourceId, context.getTheme());
+            holder.tvCount.setTextColor(secondaryColor);
         }
 
         holder.cbSelect.setOnClickListener(v -> toggleSelected(position));
