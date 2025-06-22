@@ -359,4 +359,10 @@ public void stop() {
             }
         }
     }
+    // 在MusicPlayer类中添加新方法
+    public void updateCurrentSongCoverUrl(String coverUrl) {
+        if (currentSong != null) {
+            currentSong.setCoverUrl(coverUrl);
+        }
+    }
 }

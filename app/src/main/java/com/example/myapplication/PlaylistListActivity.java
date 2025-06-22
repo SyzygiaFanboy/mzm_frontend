@@ -229,6 +229,21 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
         globalManager.attachToActivity(this);
         
+        // 添加播放状态监听器
+        musicPlayer.setOnPlaybackStateChangeListener(new MusicPlayer.OnPlaybackStateChangeListener() {
+            @Override
+            public void onPlaybackStateChanged() {
+                // 播放状态改变时更新高亮
+                runOnUiThread(() -> updateCurrentPlayingPlaylistHighlight());
+            }
+
+            @Override
+            public void onSongChanged() {
+                // 歌曲改变时更新高亮
+                runOnUiThread(() -> updateCurrentPlayingPlaylistHighlight());
+            }
+        });
+        
         globalManager.setOnBottomPlayerClickListener(this, () -> {
             // 检查是否有当前歌曲
             Song currentSong = musicPlayer.getCurrentSong();
@@ -244,9 +259,6 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
             } else {
                 musicPlayer.play();
             }
-            // 移除手动强制刷新，让监听器自动处理
-            // GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
-            // globalManager.forceRefresh();
         });
     }
     private void showSettingsDialog() {
@@ -720,11 +732,25 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         }
         applyBackgroundImage();
         if (adapter != null) {
+            // 添加检测当前播放歌单的逻辑
+            updateCurrentPlayingPlaylistHighlight();
             adapter.notifyDataSetChanged();
         }
         GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
-        globalManager.attachToActivity(this);  // 添加这一行
+        globalManager.attachToActivity(this);
         globalManager.forceRefresh();
+    }
+
+    // 添加更新当前播放歌单高亮的方法
+    private void updateCurrentPlayingPlaylistHighlight() {
+        Song currentSong = musicPlayer.getCurrentSong();
+        if (currentSong != null && adapter != null) {
+            String currentPlaylist = currentSong.getPlaylist();
+            adapter.setCurrentPlayingPlaylist(currentPlaylist);
+        } else if (adapter != null) {
+            // 如果没有正在播放的歌曲，清除高亮
+            adapter.setCurrentPlayingPlaylist(null);
+        }
     }
 
     private void confirmAndDeletePlaylist(String name, int pos) {
