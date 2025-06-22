@@ -25,10 +25,12 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
     private Context context;
     private List<Playlist> playlists;
     private boolean inManageMode = false;
-    private List<Boolean> selectedList; // 标记选中状态
+    private List<Boolean> selectedList;
     private Runnable onSelectionChanged;
     private OnItemClickListener onItemClickListener;
     private OnStartDragListener onStartDragListener;
+    // 添加正在播放歌单的标记
+    private String currentPlayingPlaylist = null;
 
     public interface OnItemClickListener {
         void onItemClick(int position);
@@ -130,6 +132,17 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
         return new ViewHolder(view);
     }
 
+    // 添加设置当前播放歌单的方法
+    public void setCurrentPlayingPlaylist(String playlistName) {
+        this.currentPlayingPlaylist = playlistName;
+        notifyDataSetChanged();
+    }
+
+    // 获取当前播放歌单
+    public String getCurrentPlayingPlaylist() {
+        return currentPlayingPlaylist;
+    }
+
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         Playlist playlist = playlists.get(position);
@@ -152,6 +165,27 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
         holder.cbSelect.setChecked(selectedList.get(position));
 
         holder.ivHandle.setVisibility(inManageMode ? View.VISIBLE : View.GONE);
+
+        // 添加正在播放歌单的高亮效果
+        if (currentPlayingPlaylist != null && currentPlayingPlaylist.equals(playlist.getName())) {
+            
+            holder.itemView.setBackgroundColor(android.graphics.Color.parseColor("#c69bc5"));
+            
+            holder.tvName.setTextColor(context.getResources().getColor(android.R.color.white, null));
+            holder.tvCount.setTextColor(context.getResources().getColor(android.R.color.white, null));
+        } else {
+            
+            android.util.TypedValue typedValue = new android.util.TypedValue();
+            context.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, typedValue, true);
+            holder.itemView.setBackgroundResource(typedValue.resourceId);
+            
+            // 恢复默认文字颜色（与播放列表逻辑相同）
+            android.util.TypedValue textColorValue = new android.util.TypedValue();
+            context.getTheme().resolveAttribute(android.R.attr.textColorPrimary, textColorValue, true);
+            holder.tvName.setTextColor(textColorValue.data);
+            context.getTheme().resolveAttribute(android.R.attr.textColorSecondary, textColorValue, true);
+            holder.tvCount.setTextColor(textColorValue.data);
+        }
 
         holder.cbSelect.setOnClickListener(v -> toggleSelected(position));
 

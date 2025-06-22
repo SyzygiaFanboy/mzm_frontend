@@ -229,7 +229,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             // 保持当前进度
             TextView currentSongTV = findViewById(R.id.currentSong);
             currentSongTV.setText(song.getName());
-            loadMusicCover(song.getFilePath());
+            // 修复：直接使用当前播放歌曲的coverUrl
+            loadMusicCover(song.getFilePath(), song.getCoverUrl());
         } else {
             playBtn.setEnabled(false);
             playBtn.setText("播放");
@@ -1716,6 +1717,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 Song songInList = Song.fromMap(musicList.get(i));
                 if (songInList.equals(currentPlayingSong)) {
                     selectedPosition = i;
+                    // 关键修复：保持原有的coverUrl信息
+                    if (currentPlayingSong.getCoverUrl() != null && !currentPlayingSong.getCoverUrl().isEmpty()) {
+                        songInList.setCoverUrl(currentPlayingSong.getCoverUrl());
+                        // 更新MusicPlayer中的currentSong以保持coverUrl
+                        musicPlayer.updateCurrentSongCoverUrl(currentPlayingSong.getCoverUrl());
+                    }
                     break;
                 }
             }
