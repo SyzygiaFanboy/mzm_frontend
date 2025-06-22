@@ -14,6 +14,9 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
 public class MusicPlayer {
     private MediaPlayer mediaPlayer;
     private static MusicPlayer instance;
@@ -34,11 +37,16 @@ public class MusicPlayer {
     private boolean isSeeking = false;
 
     private PlayerStatus playStatus = PlayerStatus.STOPPED;
-
+    
     // 播放完成的监听器接口
     public interface OnSongCompletionListener {
         void onSongCompleted();
     }
+    public interface OnPlaybackStateChangeListener {
+        void onPlaybackStateChanged();
+        void onSongChanged();
+    }
+    private OnPlaybackStateChangeListener stateChangeListener;
     private enum InternalState {
         IDLE, PREPARING, PREPARED, PLAYING, PAUSED, STOPPED, RELEASED
     }
@@ -75,6 +83,9 @@ public class MusicPlayer {
         void onProgressUpdated(int currentPosition, int totalDuration);
     }
     private ProgressListener progressListener;
+    public void setOnPlaybackStateChangeListener(OnPlaybackStateChangeListener listener) {
+        this.stateChangeListener = listener;
+    }
 
     public void setProgressListener(ProgressListener listener) {
         this.progressListener = listener;
@@ -120,11 +131,15 @@ public class MusicPlayer {
         }
 
         // 监听器（网络跟本地公用）
+        // 在loadMusic方法中修改OnPreparedListener
         mediaPlayer.setOnPreparedListener(mp -> {
-            isPrepared    = true;
-            playStatus    = PlayerStatus.PLAYING;
-            mp.start();               // 开始播放
-            startProgressUpdates();     // 播放后再启动进度更新
+            isPrepared = true;
+            playStatus = PlayerStatus.PLAYING;
+            mp.start();
+            startProgressUpdates();
+            
+            // 修改这部分：通知所有播放状态变化监听器
+            notifyPlaybackStateChanged();
         });
         mediaPlayer.setOnCompletionListener(mp -> {
             playStatus = PlayerStatus.STOPPED;
@@ -156,7 +171,10 @@ public class MusicPlayer {
             Uri uri = Uri.parse(path);
             mediaPlayer.setDataSource(context, uri);
         }
-
+        
+        // 修改这部分：通知所有歌曲变化监听器
+        notifySongChanged();
+        
         // 异步准备，然后onPreparedListener 会被回调
         mediaPlayer.prepareAsync();
     }
@@ -232,46 +250,46 @@ public class MusicPlayer {
                     playStatus = PlayerStatus.PLAYING;
                     mediaPlayer.start();
                     startProgressUpdates();
-                } else {
-                    //Log.e("MusicPlayer", "无法播放：播放器未准备就绪或为空");
+                    Log.d("MusicPlayer", "播放开始，通知监听器");
+                    // 通知状态变化
+                    notifyPlaybackStateChanged();
                 }
             }
-        }catch(IllegalStateException e){
-                Log.e("MusicPlayer", "播放时发生状态异常", e);
-                release(); // 异常时强制释放
-                isPrepared = false;
-            }
-
+        } catch(IllegalStateException e) {
+            Log.e("MusicPlayer", "播放时发生状态异常", e);
+            release();
+            isPrepared = false;
+        }
     }
 //停，通用
-    public void pause() {
-        if (mediaPlayer != null && mediaPlayer.isPlaying()) {
-            playStatus = PlayerStatus.PAUSED;
-            mediaPlayer.pause();
-            stopProgressUpdates();
-        }
-        else {
-            Log.w("MusicPlayer", "音乐未在播放，无法暂停");
-        }
-        stopProgressUpdates();
+public void pause() {
+    if (mediaPlayer != null && mediaPlayer.isPlaying()) {
+        playStatus = PlayerStatus.PAUSED;
+        mediaPlayer.pause();
+        Log.d("MusicPlayer", "播放暂停，通知监听器");
+        // 使用新的多监听器通知方法
+        notifyPlaybackStateChanged();
     }
+}
 
-    public void stop() {
-        playStatus = PlayerStatus.STOPPED;
-        isCompletionLegitimate = false;
-        if (mediaPlayer != null) {
-            try {
-                if (playStatus == PlayerStatus.PLAYING || playStatus == PlayerStatus.PAUSED) {
-                    mediaPlayer.stop();  // 只有 PLAYING 状态下这句才合法，但我们加 try-catch 容错
-                }
-                mediaPlayer.release();
-            } catch (IllegalStateException e) {
-                Log.e(TAG, "stop: MediaPlayer 状态异常", e);
+public void stop() {
+    playStatus = PlayerStatus.STOPPED;
+    isCompletionLegitimate = false;
+    if (mediaPlayer != null) {
+        try {
+            if (playStatus == PlayerStatus.PLAYING || playStatus == PlayerStatus.PAUSED) {
+                mediaPlayer.stop();
             }
-            mediaPlayer = null;
+            mediaPlayer.release();
+        } catch (IllegalStateException e) {
+            Log.e(TAG, "stop: MediaPlayer 状态异常", e);
         }
-        stopProgressUpdates();
+        mediaPlayer = null;
     }
+    stopProgressUpdates();
+    // 添加状态通知
+    notifyPlaybackStateChanged();
+}
 
 
 
@@ -310,5 +328,35 @@ public class MusicPlayer {
     public void setCurrentPositiontozero(){
         startPosition = 0;
         currentPosition = 0;
+    }
+    
+    // 改为支持多个监听器
+    private List<OnPlaybackStateChangeListener> stateChangeListeners = new ArrayList<>();
+    
+    public void addOnPlaybackStateChangeListener(OnPlaybackStateChangeListener listener) {
+        if (!stateChangeListeners.contains(listener)) {
+            stateChangeListeners.add(listener);
+        }
+    }
+    
+    public void removeOnPlaybackStateChangeListener(OnPlaybackStateChangeListener listener) {
+        stateChangeListeners.remove(listener);
+    }
+    
+    // 修改通知方法
+    private void notifyPlaybackStateChanged() {
+        for (OnPlaybackStateChangeListener listener : stateChangeListeners) {
+            if (listener != null) {
+                listener.onPlaybackStateChanged();
+            }
+        }
+    }
+    
+    private void notifySongChanged() {
+        for (OnPlaybackStateChangeListener listener : stateChangeListeners) {
+            if (listener != null) {
+                listener.onSongChanged();
+            }
+        }
     }
 }

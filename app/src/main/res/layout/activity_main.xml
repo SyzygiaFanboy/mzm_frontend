@@ -240,6 +240,7 @@
                 android:src="@drawable/ic_batch_select" />
         </LinearLayout>
 
+        <!-- 在ConstraintLayout的最后，ListView之后添加底部播放栏 -->
         <!-- 歌曲列表 -->
         <ListView
             android:id="@+id/playlist"
@@ -248,10 +249,21 @@
             android:layout_marginStart="16dp"
             android:layout_marginTop="16dp"
             android:layout_marginEnd="16dp"
-            android:layout_marginBottom="16dp"
-            app:layout_constraintBottom_toBottomOf="parent"
+            android:layout_marginBottom="8dp"
+            app:layout_constraintBottom_toTopOf="@id/bottom_player_container"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/currentSongLayout" />
+
+        <!-- 底部播放栏容器 -->
+        <include
+            android:id="@+id/bottom_player_container"
+            layout="@layout/bottom_player_bar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent" />
+
     </androidx.constraintlayout.widget.ConstraintLayout>
 </androidx.drawerlayout.widget.DrawerLayout>
