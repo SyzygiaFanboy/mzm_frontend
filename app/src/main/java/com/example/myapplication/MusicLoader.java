@@ -206,11 +206,11 @@ public class MusicLoader {
         return count;
     }
 
-    public static String getLatestCoverForPlaylist(Context context, String playlistName) {
+    public static String getFirstCoverForPlaylist(Context context, String playlistName) {
         File file = getMusicFile(context);
         if (!file.exists()) return null;
 
-        String lastSongInfo = null;
+        String songInfo = null;
         try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
             String line;
             while ((line = reader.readLine()) != null) {
@@ -218,7 +218,8 @@ public class MusicLoader {
                     JSONObject jsonObject = new JSONObject(line);
                     String playlist = jsonObject.getString("playlist");
                     if (playlist.equals(playlistName)) {
-                        lastSongInfo = line; // 保存最后一首歌的信息
+                        songInfo = line; // 保存第一首歌的信息
+                        break;
                     }
                 } catch (Exception e) {
                     Log.e(TAG, "解析JSON失败: " + line, e);
@@ -229,37 +230,37 @@ public class MusicLoader {
             return null;
         }
 
-        if (lastSongInfo == null) {
+        if (songInfo == null) {
             Log.d(TAG, "歌单 " + playlistName + " 中没有歌曲");
             return null;
         }
 
         try {
-            JSONObject jsonObject = new JSONObject(lastSongInfo);
+            JSONObject jsonObject = new JSONObject(songInfo);
             String songName = jsonObject.getString("name");
             String filePath = jsonObject.getString("filePath");
             String coverUrl = jsonObject.optString("coverUrl", "");
 
-            // 如果最后一首歌是Bilibili音乐（有coverUrl）
+            // 如果第一首歌是Bilibili音乐（有coverUrl）
             if (!coverUrl.isEmpty() && !coverUrl.equals("null")) {
                 // 生成对应的缓存文件名
                 String cacheFileName = "cover_" + Math.abs((songName + coverUrl).hashCode()) + ".jpg";
                 File cacheFile = new File(context.getFilesDir(), cacheFileName);
 
                 if (cacheFile.exists()) {
-                    Log.d(TAG, "找到歌单 " + playlistName + " 最后一首歌的缓存封面: " + cacheFile.getAbsolutePath());
+                    Log.d(TAG, "找到歌单 " + playlistName + " 第一首歌的缓存封面: " + cacheFile.getAbsolutePath());
                     return cacheFile.getAbsolutePath();
                 } else {
-                    Log.d(TAG, "歌单 " + playlistName + " 最后一首歌的缓存封面不存在，返回网络URL: " + coverUrl);
+                    Log.d(TAG, "歌单 " + playlistName + " 第一首歌的缓存封面不存在，返回网络URL: " + coverUrl);
                     return coverUrl; // 返回网络URL作为备选
                 }
             } else {
-                // 如果最后一首歌是本地音乐，返回文件路径用于提取嵌入封面
-                Log.d(TAG, "歌单 " + playlistName + " 最后一首歌是本地音乐: " + filePath);
+                // 如果第一首歌是本地音乐，返回文件路径用于提取嵌入封面
+                Log.d(TAG, "歌单 " + playlistName + " 第一首歌是本地音乐: " + filePath);
                 return filePath;
             }
         } catch (Exception e) {
-            Log.e(TAG, "解析最后一首歌JSON失败", e);
+            Log.e(TAG, "解析第一首歌JSON失败", e);
             return null;
         }
     }
