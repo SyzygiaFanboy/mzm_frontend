@@ -9,7 +9,7 @@ public class SelectedSong {
     private String filePath;
     private Uri uri;
     private int playCount;
-    private String coverUrl; // 新增封面URL字段
+    private String coverUrl; 
     
     public SelectedSong(String songName, String artist, int duration, String filePath, Uri uri) {
         this.songName = songName;
@@ -18,7 +18,7 @@ public class SelectedSong {
         this.filePath = filePath;
         this.uri = uri;
         this.playCount = 0;
-        this.coverUrl = null; // 默认为null
+        this.coverUrl = null; 
     }
     
     // Getters and Setters
