@@ -140,8 +140,16 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     private AtomicBoolean isSyncActive = new AtomicBoolean(false);
 
     // 添加B站音乐的回调接口
-    public interface myCallback<T> {
+    public interface biliCallback<T> {
         void onResult(T result);
+    }
+
+    public TextView getDialogMessage() {
+        return dialogMessage;
+    }
+
+    public ProgressBar getDialogProgressBar() {
+        return dialogProgressBar;
     }
 
     private void syncBar() {
@@ -567,6 +575,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 //            showDeleteConfirmationDialog();
 //        });
 
+        // 添加分享按钮点击事件
+        ImageButton shareBtn = findViewById(R.id.sharePlaylist);
+        shareBtn.setOnClickListener(v -> {
+            showSharePlaylistDialog();
+        });
+
         // 添加按钮
         ImageButton Addbtn = findViewById(R.id.addMusic);
         Addbtn.setOnClickListener(v -> {
@@ -574,7 +588,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             builder.setTitle("选择添加方式");
 
             // 设置选项 - 添加"搜索在线音乐"选项
-            String[] options = {"从本地添加", "从BV号 / 链接添加", "从B站收藏夹添加", "搜索在线音乐"};
+            String[] options = {"从本地添加", "从BV号 / 链接添加", "从B站收藏夹添加", "搜索在线音乐", "导入分享的歌单"};
             builder.setItems(options, (dialog, which) -> {
                 if (which == 0) {
                     // 添加本地音乐
@@ -711,6 +725,13 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     intent.putExtra("current_playlist", currentPlaylist); // 传递当前歌单名称
                     intent.putExtra("from_activity", "MainActivity"); // 标记来源页面
                     startActivityForResult(intent, REQUEST_CODE_SEARCH);
+                } else if (which == 4) {
+                    // 导入分享歌单
+                    showImportShareCodeDialog();
+
+                    updatePlaylistCover(currentPlaylist);
+                    ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
+                    updateNavButtons(); // 添加这行来启用按钮
                 }
             });
 
@@ -727,6 +748,14 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             return insets;
         });
         initBottomPlayerBar();
+    }
+
+    private void showImportShareCodeDialog() {
+        SharePlaylistUtils.showImportShareCodeDialog(this, currentPlaylist);
+    }
+
+    private void showSharePlaylistDialog() {
+        SharePlaylistUtils.showSharePlaylistDialog(this, currentPlaylist, musicList);
     }
 
     // 回调
@@ -1030,7 +1059,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         }
     }
 
-    private void updateNavButtons() {
+    void updateNavButtons() {
         boolean hasItems = !musicList.isEmpty();
         btnNext.setEnabled(hasItems);
         btnPrevious.setEnabled(hasItems);
@@ -1329,7 +1358,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         return result;
     }
 
-    private void showProgressDialog() {
+    void showProgressDialog() {
         // 使用布局加载器加载自定义布局
         LayoutInflater inflater = LayoutInflater.from(this);
         View dialogView = inflater.inflate(R.layout.progress_dialog, null);
@@ -1349,7 +1378,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         progressDialog.show();
     }
 
-    private void dismissProgressDialog() {
+    void dismissProgressDialog() {
         if (progressDialog != null && progressDialog.isShowing()) {
             progressDialog.dismiss();
         }
@@ -1941,7 +1970,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
     }
 
-    private void showBiliDialog(myCallback<String> callback) {
+    private void showBiliDialog(biliCallback<String> callback) {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("从BV号 / 链接添加");
 
@@ -2030,7 +2059,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         dialog.show();
     }
 
-    private void showBiliCollectionDialog(myCallback<List<String>> callback) {
+    private void showBiliCollectionDialog(biliCallback<List<String>> callback) {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("从B站收藏夹添加");
 
@@ -2139,7 +2168,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         dialog.show();
     }
 
-    private void showBiliVideoSelectionDialog(String uid, String fid, myCallback<List<String>> callback) {
+    private void showBiliVideoSelectionDialog(String uid, String fid, biliCallback<List<String>> callback) {
         // 在UI线程中创建和显示对话框
         runOnUiThread(() -> {
             // 创建对话框视图
@@ -2361,7 +2390,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         });
     }
 
-    private void getBiliMusic(String bv, Context context, myCallback<Map<String, Object>> callback) {
+    void getBiliMusic(String bv, Context context, biliCallback<Map<String, Object>> callback) {
         OkHttpClient client = new OkHttpClient();
 
         // 获取音频流要av/bv的同时还要cid
