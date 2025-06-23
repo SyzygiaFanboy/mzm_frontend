@@ -5,7 +5,6 @@ import static com.example.myapplication.MainActivity.addSongToPlaylist;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Typeface;
-import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
@@ -65,8 +64,7 @@ public class SharePlaylistUtils {
             playlistSongs.add(song);
 
             // 判断是否为本地歌曲
-            if (song.getFilePath().startsWith("content://") ||
-                    (!song.getFilePath().startsWith("http") && new File(song.getFilePath()).exists())) {
+            if (song.getFilePath().startsWith("content://")) {
                 localSongs.add(song);
             } else {
                 onlineSongs.add(song);
@@ -131,8 +129,7 @@ public class SharePlaylistUtils {
         // 创建一个待上传的歌曲列表
         List<Song> songsToUpload = new ArrayList<>();
         for (Song song : allSongs) {
-            if (song.getFilePath().startsWith("content://") ||
-                    (!song.getFilePath().startsWith("http") && new File(song.getFilePath()).exists())) {
+            if (song.getFilePath().startsWith("content://")) {
                 songsToUpload.add(song);
             }
         }
@@ -158,19 +155,16 @@ public class SharePlaylistUtils {
             });
 
             // 使用UploadTask上传歌曲
-            uploadSong(activity, currentSong, new Runnable() {
-                @Override
-                public void run() {
-                    int completed = uploadedCount.incrementAndGet();
-                    dialogProgressBar.setProgress(completed);
+            uploadSong(activity, currentSong, () -> {
+                int completed = uploadedCount.incrementAndGet();
+                dialogProgressBar.setProgress(completed);
 
-                    // 当所有歌曲上传完成后，生成分享码
-                    if (completed == songsToUpload.size()) {
-                        // 延迟一小段时间确保服务器处理完成
-                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                            sharePlaylist(activity, currentPlaylist, allSongs);
-                        }, 500);
-                    }
+                // 当所有歌曲上传完成后，生成分享码
+                if (completed == songsToUpload.size()) {
+                    // 延迟一小段时间确保服务器处理完成
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        sharePlaylist(activity, currentPlaylist, allSongs);
+                    }, 500);
                 }
             });
         }
@@ -228,8 +222,16 @@ public class SharePlaylistUtils {
     private static void sharePlaylist(MainActivity activity, String currentPlaylist, List<Song> songs) {
         // 更新进度对话框状态
         activity.runOnUiThread(() -> {
-            activity.getDialogMessage().setText("正在生成分享码...");
-            activity.getDialogProgressBar().setIndeterminate(true);
+            TextView dialogMessage = activity.getDialogMessage();
+            ProgressBar dialogProgressBar = activity.getDialogProgressBar();
+
+            if (dialogMessage != null) {
+                dialogMessage.setText("正在生成分享码...");
+            }
+
+            if (dialogProgressBar != null) {
+                dialogProgressBar.setIndeterminate(true);
+            }
         });
 
         try {
@@ -245,25 +247,27 @@ public class SharePlaylistUtils {
                 songObj.put("coverUrl", song.getCoverUrl() != null ? song.getCoverUrl() : "");
 
                 // 添加歌曲类型信息
-                if (song.getFilePath().startsWith("http")) {
+                String filePath = song.getFilePath();
+                if (filePath.startsWith("http")) {
                     // 在线歌曲
                     songObj.put("type", "online");
-                    songObj.put("url", song.getFilePath());
-                } else if (song.getFilePath().contains("bilibili") || song.getFilePath().contains("BV") || song.getFilePath().contains(".tv")) {
+                    songObj.put("url", filePath);
+                } else if (filePath.contains("bilibili") || filePath.contains("BV") || filePath.contains("av")) {
                     // B站歌曲
                     songObj.put("type", "bili");
 
                     // 提取BV号
-                    String path = song.getFilePath();
+                    String path = filePath;
                     int startIndex = path.indexOf("BV");
-                    int endIndex = path.indexOf(".", startIndex); // 从刚刚的位置开始找
+                    int endIndex = path.indexOf("_", startIndex); // 从刚刚的位置开始找
+                    if (endIndex < 0) {
+                        endIndex = path.indexOf(".", startIndex); // 如果没有下划线就是纯BV号，直接找后缀
+                    }
                     path = path.substring(startIndex, endIndex > 0 ? endIndex : path.length());
                     songObj.put("url", path);
                 } else {
                     // 本地歌曲
                     songObj.put("type", "local");
-                    // 获取服务器上的ID (假设已上传)
-//                    songObj.put("id", getFileNameHash(song.getFilePath()));
                 }
 
                 songsArray.put(songObj);
@@ -365,6 +369,7 @@ public class SharePlaylistUtils {
             android.content.ClipData clip = android.content.ClipData.newPlainText("分享码", shareCode);
             clipboard.setPrimaryClip(clip);
             Toast.makeText(context, "已复制到剪贴板", Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
         });
 
         builder.setNegativeButton("关闭", (dialog, which) -> dialog.dismiss());
@@ -499,14 +504,25 @@ public class SharePlaylistUtils {
             if (dialogMessage != null) {
                 dialogMessage.setText("正在导入歌曲...");
             }
-            dialogProgressBar.setMax(songsArray.length());
-            dialogProgressBar.setProgress(0);
+
+            if (dialogProgressBar != null) {
+                dialogProgressBar.setMax(songsArray.length());
+                dialogProgressBar.setProgress(0);
+            }
         });
 
+        // 用于保存导入结果的列表
         List<Song> importedSongs = new ArrayList<>();
-        AtomicInteger successCount = new AtomicInteger(0);
-        AtomicInteger processedCount = new AtomicInteger(0);
 
+        // 常规歌曲计数器
+        AtomicInteger processedCount = new AtomicInteger(0);
+        AtomicInteger successCount = new AtomicInteger(0);
+
+        // B站歌曲的特殊计数
+        AtomicInteger biliSongCount = new AtomicInteger(0);
+        AtomicInteger biliProcessedCount = new AtomicInteger(0);
+
+        // 先处理所有非B站歌曲
         for (int i = 0; i < songsArray.length(); i++) {
             try {
                 JSONObject songJson = songsArray.getJSONObject(i);
@@ -515,7 +531,11 @@ public class SharePlaylistUtils {
                 int duration = songJson.getInt("duration");
                 String coverUrl = songJson.optString("coverUrl", "");
 
-                final int currentIndex = i;
+                if ("bili".equals(songType)) {
+                    // 只计算B站歌曲数量，稍后处理
+                    biliSongCount.incrementAndGet();
+                    continue;
+                }
 
                 switch (songType) {
                     case "online":
@@ -531,35 +551,6 @@ public class SharePlaylistUtils {
                         successCount.incrementAndGet();
                         break;
 
-                    case "bili":
-                        // B站音乐需要调用MainActivity的getBiliMusic方法获取
-                        String bvid = songJson.getString("url");
-
-                        activity.getBiliMusic(bvid, activity, result -> {
-                            if (result != null) {
-                                String title = (String) result.get("title");
-                                File f = (File) result.get("file");
-                                String cover = (String) result.get("coverUrl");
-                                String path = f.getAbsolutePath();
-
-                                // 获取文件信息，用于转化成song
-                                MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-                                retriever.setDataSource(path);
-
-                                // 封装、添加到歌单
-                                Song biliSong = new Song(duration, title, path, playlistName);
-                                biliSong.setCoverUrl(cover); // 设置封面URL
-                                importedSongs.add(biliSong);
-
-                                successCount.incrementAndGet();
-                                Toast.makeText(activity, "已添加到歌单", Toast.LENGTH_SHORT).show();
-                            } else {
-                                Toast.makeText(activity, "获取B站音乐失败", Toast.LENGTH_SHORT).show();
-                                Log.e("BiliMusic", "获取B站音乐失败，bv: " + bvid);
-                            }
-                        });
-                        break;
-
                     case "local":
                         // 需要从服务器下载本地歌曲
                         String songId = songJson.getString("id");
@@ -570,40 +561,131 @@ public class SharePlaylistUtils {
                 // 更新进度
                 final int processed = processedCount.incrementAndGet();
                 activity.runOnUiThread(() -> {
-                    activity.getDialogProgressBar().setProgress(processed);
-                    activity.getDialogMessage().setText("正在导入歌曲... (" + processed + "/" + songsArray.length() + ")");
-                });
+                    ProgressBar progressBar = activity.getDialogProgressBar();
+                    TextView message = activity.getDialogMessage();
 
+                    if (progressBar != null) {
+                        progressBar.setProgress(processed);
+                    }
+
+                    if (message != null) {
+                        message.setText("正在导入歌曲... (" + processed + "/" + songsArray.length() + ")");
+                    }
+                });
             } catch (JSONException e) {
                 Log.e(TAG, "导入歌曲失败: " + e.getMessage());
+                processedCount.incrementAndGet();
             }
         }
 
-        // 等待所有处理完成
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            // 添加所有导入的歌曲到播放列表
-            for (Song song : importedSongs) {
-                MusicLoader.appendMusic(activity, song);
-                addSongToPlaylist(song);
-            }
+        // 如果没有B站歌曲，直接完成
+        if (biliSongCount.get() == 0) {
+            finalizeImport(activity, importedSongs, successCount.get());
+            return;
+        }
 
-            // 更新UI
-            activity.runOnUiThread(() -> {
-                activity.dismissProgressDialog();
+        // 再处理B站歌曲
+        for (int i = 0; i < songsArray.length(); i++) {
+            try {
+                JSONObject songJson = songsArray.getJSONObject(i);
+                String songType = songJson.getString("type");
 
-                if (successCount.get() > 0) {
-                    Toast.makeText(activity,
-                            "成功导入 " + successCount.get() + " 首歌曲",
-                            Toast.LENGTH_SHORT).show();
-
-                    // 刷新列表
-                    activity.refreshPlaylist();
-                    activity.updateNavButtons();
-                } else {
-                    Toast.makeText(activity, "未导入任何歌曲", Toast.LENGTH_SHORT).show();
+                if (!"bili".equals(songType)) {
+                    continue; // 跳过非B站歌曲
                 }
-            });
-        }, 1000);
+
+                String songName = songJson.getString("name");
+                int duration = songJson.getInt("duration");
+                String bvid = songJson.getString("url");
+
+                // 处理B站歌曲
+                activity.getBiliMusic(bvid, activity, result -> {
+                    try {
+                        if (result != null) {
+                            String title = (String) result.get("title");
+                            File f = (File) result.get("file");
+                            String cover = (String) result.get("coverUrl");
+                            String path = f.getAbsolutePath();
+
+                            // 创建Song对象
+                            Song biliSong = new Song(duration, title, path, playlistName);
+                            biliSong.setCoverUrl(cover);
+
+                            synchronized (importedSongs) {
+                                importedSongs.add(biliSong);
+                                successCount.incrementAndGet();
+                            }
+
+                            activity.runOnUiThread(() ->
+                                    Toast.makeText(activity, "已添加B站音乐: " + title, Toast.LENGTH_SHORT).show()
+                            );
+                        } else {
+                            activity.runOnUiThread(() ->
+                                    Toast.makeText(activity, "获取B站音乐失败", Toast.LENGTH_SHORT).show()
+                            );
+                        }
+                    } finally {
+                        // 更新B站歌曲处理进度
+                        int biliProcessed = biliProcessedCount.incrementAndGet();
+                        final int totalProcessed = processedCount.get() + biliProcessed;
+
+                        activity.runOnUiThread(() -> {
+                            ProgressBar progressBar = activity.getDialogProgressBar();
+                            TextView message = activity.getDialogMessage();
+
+                            if (progressBar != null) {
+                                progressBar.setProgress(totalProcessed);
+                            }
+
+                            if (message != null) {
+                                message.setText("正在导入歌曲... (" + totalProcessed + "/" + songsArray.length() + ")");
+                            }
+                        });
+
+                        // 如果所有B站歌曲处理完毕，完成导入
+                        if (biliProcessed == biliSongCount.get()) {
+                            finalizeImport(activity, importedSongs, successCount.get());
+                        }
+                    }
+                });
+            } catch (JSONException e) {
+                Log.e(TAG, "处理B站歌曲失败: " + e.getMessage());
+
+                // 更新处理进度并检查是否完成
+                int biliProcessed = biliProcessedCount.incrementAndGet();
+                if (biliProcessed == biliSongCount.get()) {
+                    finalizeImport(activity, importedSongs, successCount.get());
+                }
+            }
+        }
+    }
+
+    /**
+     * 完成导入过程
+     */
+    private static void finalizeImport(MainActivity activity, List<Song> importedSongs, int successCount) {
+        // 添加所有导入的歌曲到播放列表
+        for (Song song : importedSongs) {
+            MusicLoader.appendMusic(activity, song);
+            addSongToPlaylist(song);
+        }
+
+        // 更新UI
+        activity.runOnUiThread(() -> {
+            activity.dismissProgressDialog();
+
+            if (successCount > 0) {
+                Toast.makeText(activity,
+                        "成功导入 " + successCount + " 首歌曲",
+                        Toast.LENGTH_SHORT).show();
+
+                // 刷新列表
+                activity.refreshPlaylist();
+                activity.updateNavButtons();
+            } else {
+                Toast.makeText(activity, "未导入任何歌曲", Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     /**
