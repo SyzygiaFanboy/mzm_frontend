@@ -1,6 +1,7 @@
 package com.example.myapplication;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
@@ -25,7 +26,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.myapplication.adapter.SelectedSongAdapter;
 import com.example.myapplication.model.SelectedSong;
-import com.example.myapplication.network.UploadTask;
+import com.example.myapplication.network.BatchUploadTask;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -106,19 +107,21 @@ public class UploadActivity extends AppCompatActivity {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("audio/*");
-
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true); // 允许多选
+    
         // 添加多种音频格式支持
         String[] mimeTypes = {"audio/mpeg", "audio/mp3", "audio/wav", "audio/flac", "audio/aac", "audio/ogg"};
         intent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes);
-
+    
         try {
-            startActivityForResult(Intent.createChooser(intent, "选择音乐文件"), REQUEST_PICK_AUDIO);
+            startActivityForResult(Intent.createChooser(intent, "选择音乐文件（可多选）"), REQUEST_PICK_AUDIO);
         } catch (android.content.ActivityNotFoundException ex) {
             // 如果没有文件管理器，尝试使用 ACTION_GET_CONTENT
             Intent fallbackIntent = new Intent(Intent.ACTION_GET_CONTENT);
             fallbackIntent.setType("audio/*");
+            fallbackIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
             fallbackIntent.addCategory(Intent.CATEGORY_OPENABLE);
-            startActivityForResult(Intent.createChooser(fallbackIntent, "选择音乐文件"), REQUEST_PICK_AUDIO);
+            startActivityForResult(Intent.createChooser(fallbackIntent, "选择音乐文件（可多选）"), REQUEST_PICK_AUDIO);
         }
     }
 
@@ -137,9 +140,18 @@ public class UploadActivity extends AppCompatActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        
         if (requestCode == REQUEST_PICK_AUDIO && resultCode == RESULT_OK && data != null) {
-            Uri audioUri = data.getData();
-            if (audioUri != null) {
+            if (data.getClipData() != null) {
+                // 多文件选择
+                int count = data.getClipData().getItemCount();
+                for (int i = 0; i < count; i++) {
+                    Uri audioUri = data.getClipData().getItemAt(i).getUri();
+                    addSelectedSong(audioUri);
+                }
+            } else if (data.getData() != null) {
+                // 单文件选择
+                Uri audioUri = data.getData();
                 addSelectedSong(audioUri);
             }
         }
@@ -151,8 +163,19 @@ public class UploadActivity extends AppCompatActivity {
             if (song != null) {
                 // 检查是否已经添加过这首歌
                 boolean alreadyExists = selectedSongs.stream()
-                        .anyMatch(s -> s.getFilePath().equals(song.getFilePath()));
-
+                        .anyMatch(s -> {
+                            String sPath = s.getFilePath();
+                            String songPath = song.getFilePath();
+                            
+                            // 如果两个路径都不为null，比较路径
+                            if (sPath != null && songPath != null) {
+                                return sPath.equals(songPath);
+                            }
+                            
+                            // 如果路径为null，比较URI
+                            return s.getUri().equals(song.getUri());
+                        });
+    
                 if (!alreadyExists) {
                     selectedSongs.add(song);
                     adapter.notifyDataSetChanged();
@@ -228,7 +251,18 @@ public class UploadActivity extends AppCompatActivity {
     private void removeSong(int position) {
         if (position >= 0 && position < selectedSongs.size()) {
             SelectedSong removedSong = selectedSongs.remove(position);
-            adapter.notifyItemRemoved(position);
+            
+            // 如果删除后列表为空，使用完整刷新
+            if (selectedSongs.isEmpty()) {
+                adapter.notifyDataSetChanged();
+            } else {
+                adapter.notifyItemRemoved(position);
+                // 如果删除的不是最后一项，需要通知后续项目位置变化
+                if (position < selectedSongs.size()) {
+                    adapter.notifyItemRangeChanged(position, selectedSongs.size() - position);
+                }
+            }
+            
             updateUI();
             Toast.makeText(this, "已移除: " + removedSong.getSongName(), Toast.LENGTH_SHORT).show();
         }
@@ -249,37 +283,46 @@ public class UploadActivity extends AppCompatActivity {
         }
 
         btnUploadSongs.setEnabled(false);
-        btnUploadSongs.setText("上传中...");
+        btnUploadSongs.setText("准备上传...");
 
-        // 这里只上传第一首歌曲，因为要求只支持同时上传一首
-        SelectedSong song = selectedSongs.get(0);
-
-        UploadTask uploadTask = new UploadTask(this, new UploadTask.UploadCallback() {
+        BatchUploadTask batchUploadTask = new BatchUploadTask(this, selectedSongs, new BatchUploadTask.BatchUploadCallback() {
             @Override
-            public void onSuccess() {
-                runOnUiThread(() -> {
-                    Toast.makeText(UploadActivity.this, "上传成功！", Toast.LENGTH_SHORT).show();
-                    finish();
-                });
-            }
-
-            @Override
-            public void onError(String error) {
-                runOnUiThread(() -> {
-                    Toast.makeText(UploadActivity.this, "上传失败: " + error, Toast.LENGTH_SHORT).show();
+            public void onSuccess(int successCount, int totalCount) {
+                String message = String.format("上传完成！成功: %d/%d", successCount, totalCount);
+                Toast.makeText(UploadActivity.this, message, Toast.LENGTH_LONG).show();
+                if (successCount == totalCount) {
+                    finish(); // 全部成功才关闭页面
+                } else {
                     btnUploadSongs.setEnabled(true);
-                    btnUploadSongs.setText("上传 " + selectedSongs.size() + " 首歌曲");
-                });
+                    btnUploadSongs.setText("重新上传失败的歌曲");
+                }
             }
 
             @Override
-            public void onProgress(int progress) {
-                runOnUiThread(() -> {
-                    btnUploadSongs.setText("上传中... " + progress + "%");
-                });
+            public void onError(String error, int failedIndex, int successCount) {
+                String message = String.format("上传失败: %s (已成功: %d首)", error, successCount);
+                Toast.makeText(UploadActivity.this, message, Toast.LENGTH_LONG).show();
+                btnUploadSongs.setEnabled(true);
+                btnUploadSongs.setText("重新上传");
+            }
+
+            @Override
+            public void onProgress(BatchUploadTask.UploadProgress progress) {
+                @SuppressLint("DefaultLocale") String text = String.format("上传中 (%d/%d): %s - %d%%",
+                    progress.currentIndex + 1, 
+                    progress.totalCount, 
+                    progress.currentSongName, 
+                    progress.currentProgress);
+                btnUploadSongs.setText(text);
+            }
+
+            @Override
+            public void onSongUploadComplete(int index, String songName, boolean success) {
+                String status = success ? "✓" : "✗";
+                Log.d(TAG, String.format("%s 第%d首: %s", status, index + 1, songName));
             }
         });
 
-        uploadTask.execute(song);
+        batchUploadTask.execute();
     }
 }
