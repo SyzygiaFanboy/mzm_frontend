@@ -7,14 +7,14 @@ import java.util.Map;
 
 import okhttp3.Call;
 import okhttp3.Callback;
-
 import okhttp3.FormBody;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+
 //发送请求
 public class HttpUtil {
-    private static final String BASE_URL = "http://192.168.1.100:8080/";
+    private static final String BASE_URL = "http://192.168.0.22:8080/";
 
     public static void post(String endpoint, Map<String, String> params,
                             final HttpCallback callback) {
@@ -47,6 +47,7 @@ public class HttpUtil {
 
     public interface HttpCallback {
         void onSuccess(String response);
+
         void onFailure(String error);
     }
 }

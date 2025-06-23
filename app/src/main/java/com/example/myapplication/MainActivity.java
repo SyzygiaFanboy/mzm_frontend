@@ -588,7 +588,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             builder.setTitle("选择添加方式");
 
             // 设置选项 - 添加"搜索在线音乐"选项
-            String[] options = {"从本地添加", "从BV号 / 链接添加", "从B站收藏夹添加", "搜索在线音乐", "导入分享的歌单"};
+            String[] options = {"从本地添加", "从BV号 / 链接添加", "从B站收藏夹添加", "搜索在线音乐", "导入分享的歌曲"};
             builder.setItems(options, (dialog, which) -> {
                 if (which == 0) {
                     // 添加本地音乐
@@ -1463,57 +1463,58 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     }
 
     // 安全的进度更新方法
-private void updateProgress(int progress, String message) {
-    runOnUiThread(() -> {
+    private void updateProgress(int progress, String message) {
+        runOnUiThread(() -> {
+            try {
+                if (progressDialog != null && progressDialog.isShowing()) {
+                    if (dialogProgressBar != null) {
+                        dialogProgressBar.setProgress(progress);
+                    }
+                    if (dialogMessage != null && message != null) {
+                        dialogMessage.setText(message);
+                    }
+                }
+            } catch (Exception e) {
+                Log.e("MainActivity", "更新进度失败: " + e.getMessage());
+            }
+        });
+    }
+
+    // 安全的进度显示方法
+    private void safeShowProgressDialog() {
+        runOnUiThread(() -> {
+            if (!isFinishing() && !isDestroyed()) {
+                showProgressDialog();
+            }
+        });
+    }
+
+    // 安全的进度关闭方法
+    private void safeDismissProgressDialog() {
+        runOnUiThread(() -> {
+            dismissProgressDialog();
+        });
+    }
+
+    // 检查进度对话框是否正在显示
+    private boolean isProgressDialogShowing() {
+        return progressDialog != null && progressDialog.isShowing();
+    }
+
+    // 强制关闭进度对话框（用于异常情况）
+    private void forceCloseProgressDialog() {
         try {
-            if (progressDialog != null && progressDialog.isShowing()) {
-                if (dialogProgressBar != null) {
-                    dialogProgressBar.setProgress(progress);
-                }
-                if (dialogMessage != null && message != null) {
-                    dialogMessage.setText(message);
-                }
+            if (progressDialog != null) {
+                progressDialog.dismiss();
             }
         } catch (Exception e) {
-            Log.e("MainActivity", "更新进度失败: " + e.getMessage());
+            Log.e("MainActivity", "强制关闭进度对话框失败: " + e.getMessage());
+        } finally {
+            progressDialog = null;
+            dialogProgressBar = null;
+            dialogMessage = null;
         }
-    });
-}
-// 安全的进度显示方法
-private void safeShowProgressDialog() {
-    runOnUiThread(() -> {
-        if (!isFinishing() && !isDestroyed()) {
-            showProgressDialog();
-        }
-    });
-}
-
-// 安全的进度关闭方法
-private void safeDismissProgressDialog() {
-    runOnUiThread(() -> {
-        dismissProgressDialog();
-    });
-}
-
-// 检查进度对话框是否正在显示
-private boolean isProgressDialogShowing() {
-    return progressDialog != null && progressDialog.isShowing();
-}
-
-// 强制关闭进度对话框（用于异常情况）
-private void forceCloseProgressDialog() {
-    try {
-        if (progressDialog != null) {
-            progressDialog.dismiss();
-        }
-    } catch (Exception e) {
-        Log.e("MainActivity", "强制关闭进度对话框失败: " + e.getMessage());
-    } finally {
-        progressDialog = null;
-        dialogProgressBar = null;
-        dialogMessage = null;
     }
-}
 
     private void copyAndAddMusicFiles(List<Uri> uris) {
         // 在UI线程中显示进度弹窗
@@ -2401,7 +2402,7 @@ private void forceCloseProgressDialog() {
             String fullTitle = mainTitle + " - " + pageTitle;
 
             BiliVideoAdapter.BiliVideoItem item = new BiliVideoAdapter.BiliVideoItem(
-                uniqueId, fullTitle, uploader, duration);
+                    uniqueId, fullTitle, uploader, duration);
             videoItems.add(item);
         }
 
@@ -2494,7 +2495,7 @@ private void forceCloseProgressDialog() {
                 String uniqueId = episodeBvid + "_" + cid + "_" + episodeCoverUrl;
 
                 BiliVideoAdapter.BiliVideoItem item = new BiliVideoAdapter.BiliVideoItem(
-                    uniqueId, episodeTitle, uploader, duration);
+                        uniqueId, episodeTitle, uploader, duration);
                 allVideoItems.add(item);
             }
         }
@@ -2584,191 +2585,191 @@ private void forceCloseProgressDialog() {
     }
 
     private void downloadSelectedUGCVideos(List<BiliVideoAdapter.BiliVideoItem> selectedItems,
-                                      JsonObject videoInfo,
-                                      biliCallback<Map<String, Object>> callback) {
+                                           JsonObject videoInfo,
+                                           biliCallback<Map<String, Object>> callback) {
 
-    safeShowProgressDialog();
-    updateProgress(0, "正在下载视频合集 (0/" + selectedItems.size() + ")");
+        safeShowProgressDialog();
+        updateProgress(0, "正在下载视频合集 (0/" + selectedItems.size() + ")");
 
-    AtomicInteger completedCount = new AtomicInteger(0);
-    AtomicInteger successCount = new AtomicInteger(0);
+        AtomicInteger completedCount = new AtomicInteger(0);
+        AtomicInteger successCount = new AtomicInteger(0);
 
-    for (BiliVideoAdapter.BiliVideoItem item : selectedItems) {
-        // 从uniqueId中提取bvid、cid和coverUrl
-        String[] parts = item.getBvid().split("_");
-        String bvid = parts[0];
-        long cid = Long.parseLong(parts[1]);
-        String coverUrl = parts.length > 2 ? parts[2] : videoInfo.get("pic").getAsString();
+        for (BiliVideoAdapter.BiliVideoItem item : selectedItems) {
+            // 从uniqueId中提取bvid、cid和coverUrl
+            String[] parts = item.getBvid().split("_");
+            String bvid = parts[0];
+            long cid = Long.parseLong(parts[1]);
+            String coverUrl = parts.length > 2 ? parts[2] : videoInfo.get("pic").getAsString();
 
-        // 下载单个视频，使用正确的封面URL
-        downloadSingleBiliVideo(bvid, cid, item.getTitle(), coverUrl,
-            result -> {
-                int completed = completedCount.incrementAndGet();
-                if (result != null) {
-                    successCount.incrementAndGet();
+            // 下载单个视频，使用正确的封面URL
+            downloadSingleBiliVideo(bvid, cid, item.getTitle(), coverUrl,
+                    result -> {
+                        int completed = completedCount.incrementAndGet();
+                        if (result != null) {
+                            successCount.incrementAndGet();
 
-                    // 添加到播放列表
-                    runOnUiThread(() -> {
-                        if (isFinishing() || isDestroyed()) {
-                            return;
+                            // 添加到播放列表
+                            runOnUiThread(() -> {
+                                if (isFinishing() || isDestroyed()) {
+                                    return;
+                                }
+
+                                try {
+                                    String title = (String) result.get("title");
+                                    File f = (File) result.get("file");
+                                    String resultCoverUrl = (String) result.get("coverUrl");
+                                    String path = f.getAbsolutePath();
+
+                                    MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+                                    retriever.setDataSource(path);
+                                    String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                                    int duration = Integer.parseInt(durationStr) / 1000;
+
+                                    Song newSong = new Song(duration, title, path, currentPlaylist);
+                                    newSong.setCoverUrl(resultCoverUrl);
+                                    addSongToPlaylist(newSong);
+                                    MusicLoader.appendMusic(this, newSong);
+
+                                    retriever.release();
+                                } catch (Exception e) {
+                                    Log.e("BiliMusic", "处理音频文件失败: " + e.getMessage());
+                                }
+                            });
                         }
 
-                        try {
-                            String title = (String) result.get("title");
-                            File f = (File) result.get("file");
-                            String resultCoverUrl = (String) result.get("coverUrl");
-                            String path = f.getAbsolutePath();
+                        // 更新进度
+                        int progressPercent = (completed * 100) / selectedItems.size();
+                        updateProgress(progressPercent, "正在下载视频合集 (" + completed + "/" + selectedItems.size() + ")");
 
-                            MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-                            retriever.setDataSource(path);
-                            String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
-                            int duration = Integer.parseInt(durationStr) / 1000;
+                        if (completed == selectedItems.size()) {
+                            // 全部完成
+                            runOnUiThread(() -> {
+                                if (isFinishing() || isDestroyed()) {
+                                    safeDismissProgressDialog();
+                                    return;
+                                }
 
-                            Song newSong = new Song(duration, title, path, currentPlaylist);
-                            newSong.setCoverUrl(resultCoverUrl);
-                            addSongToPlaylist(newSong);
-                            MusicLoader.appendMusic(this, newSong);
+                                try {
+                                    safeDismissProgressDialog();
+                                    updatePlaylistCover(currentPlaylist);
 
-                            retriever.release();
-                        } catch (Exception e) {
-                            Log.e("BiliMusic", "处理音频文件失败: " + e.getMessage());
+                                    if (listview != null && listview.getAdapter() != null) {
+                                        ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
+                                    }
+                                    updateNavButtons();
+
+                                    Toast.makeText(MainActivity.this,
+                                            "成功添加 " + successCount.get() + "/" + selectedItems.size() + " 首歌曲",
+                                            Toast.LENGTH_SHORT).show();
+
+                                    if (callback != null) {
+                                        Map<String, Object> finalResult = new HashMap<>();
+                                        finalResult.put("success", true);
+                                        finalResult.put("count", successCount.get());
+                                        callback.onResult(finalResult);
+                                    }
+                                } catch (Exception e) {
+                                    Log.e("BiliMusic", "完成处理失败: " + e.getMessage());
+                                    safeDismissProgressDialog();
+                                }
+                            });
                         }
                     });
-                }
-
-                // 更新进度
-                int progressPercent = (completed * 100) / selectedItems.size();
-                updateProgress(progressPercent, "正在下载视频合集 (" + completed + "/" + selectedItems.size() + ")");
-
-                if (completed == selectedItems.size()) {
-                    // 全部完成
-                    runOnUiThread(() -> {
-                        if (isFinishing() || isDestroyed()) {
-                            safeDismissProgressDialog();
-                            return;
-                        }
-
-                        try {
-                            safeDismissProgressDialog();
-                            updatePlaylistCover(currentPlaylist);
-
-                            if (listview != null && listview.getAdapter() != null) {
-                                ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
-                            }
-                            updateNavButtons();
-
-                            Toast.makeText(MainActivity.this,
-                                "成功添加 " + successCount.get() + "/" + selectedItems.size() + " 首歌曲",
-                                Toast.LENGTH_SHORT).show();
-
-                            if (callback != null) {
-                                Map<String, Object> finalResult = new HashMap<>();
-                                finalResult.put("success", true);
-                                finalResult.put("count", successCount.get());
-                                callback.onResult(finalResult);
-                            }
-                        } catch (Exception e) {
-                            Log.e("BiliMusic", "完成处理失败: " + e.getMessage());
-                            safeDismissProgressDialog();
-                        }
-                    });
-                }
-            });
+        }
     }
-}
 
     private void downloadSelectedBiliVideos(List<BiliVideoAdapter.BiliVideoItem> selectedItems,
-                                       JsonArray pages, JsonObject videoInfo,
-                                       biliCallback<Map<String, Object>> callback) {
+                                            JsonArray pages, JsonObject videoInfo,
+                                            biliCallback<Map<String, Object>> callback) {
 
-    safeShowProgressDialog();
-    updateProgress(0, "正在下载视频合集 (0/" + selectedItems.size() + ")");
+        safeShowProgressDialog();
+        updateProgress(0, "正在下载视频合集 (0/" + selectedItems.size() + ")");
 
-    AtomicInteger completedCount = new AtomicInteger(0);
-    AtomicInteger successCount = new AtomicInteger(0);
+        AtomicInteger completedCount = new AtomicInteger(0);
+        AtomicInteger successCount = new AtomicInteger(0);
 
-    for (BiliVideoAdapter.BiliVideoItem item : selectedItems) {
-        // 从uniqueId中提取cid
-        String[] parts = item.getBvid().split("_");
-        String bvid = parts[0];
-        long cid = Long.parseLong(parts[1]);
+        for (BiliVideoAdapter.BiliVideoItem item : selectedItems) {
+            // 从uniqueId中提取cid
+            String[] parts = item.getBvid().split("_");
+            String bvid = parts[0];
+            long cid = Long.parseLong(parts[1]);
 
-        // 下载单个视频
-        downloadSingleBiliVideo(bvid, cid, item.getTitle(), videoInfo.get("pic").getAsString(),
-            result -> {
-                int completed = completedCount.incrementAndGet();
-                if (result != null) {
-                    successCount.incrementAndGet();
+            // 下载单个视频
+            downloadSingleBiliVideo(bvid, cid, item.getTitle(), videoInfo.get("pic").getAsString(),
+                    result -> {
+                        int completed = completedCount.incrementAndGet();
+                        if (result != null) {
+                            successCount.incrementAndGet();
 
-                    // 添加到播放列表
-                    runOnUiThread(() -> {
-                        if (isFinishing() || isDestroyed()) {
-                            return;
+                            // 添加到播放列表
+                            runOnUiThread(() -> {
+                                if (isFinishing() || isDestroyed()) {
+                                    return;
+                                }
+
+                                String title = (String) result.get("title");
+                                File f = (File) result.get("file");
+                                String coverUrl = (String) result.get("coverUrl");
+                                String path = f.getAbsolutePath();
+
+                                try {
+                                    MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+                                    retriever.setDataSource(path);
+                                    String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                                    int duration = Integer.parseInt(durationStr) / 1000;
+
+                                    Song newSong = new Song(duration, title, path, currentPlaylist);
+                                    newSong.setCoverUrl(coverUrl);
+                                    addSongToPlaylist(newSong);
+                                    MusicLoader.appendMusic(this, newSong);
+
+                                    retriever.release();
+                                } catch (Exception e) {
+                                    Log.e("BiliMusic", "处理音频文件失败: " + e.getMessage());
+                                }
+                            });
                         }
 
-                        String title = (String) result.get("title");
-                        File f = (File) result.get("file");
-                        String coverUrl = (String) result.get("coverUrl");
-                        String path = f.getAbsolutePath();
+                        // 更新进度
+                        int progressPercent = (completed * 100) / selectedItems.size();
+                        updateProgress(progressPercent, "正在下载视频合集 (" + completed + "/" + selectedItems.size() + ")");
 
-                        try {
-                            MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-                            retriever.setDataSource(path);
-                            String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
-                            int duration = Integer.parseInt(durationStr) / 1000;
+                        if (completed == selectedItems.size()) {
+                            // 全部完成
+                            runOnUiThread(() -> {
+                                if (isFinishing() || isDestroyed()) {
+                                    safeDismissProgressDialog();
+                                    return;
+                                }
 
-                            Song newSong = new Song(duration, title, path, currentPlaylist);
-                            newSong.setCoverUrl(coverUrl);
-                            addSongToPlaylist(newSong);
-                            MusicLoader.appendMusic(this, newSong);
+                                try {
+                                    safeDismissProgressDialog();
+                                    updatePlaylistCover(currentPlaylist);
 
-                            retriever.release();
-                        } catch (Exception e) {
-                            Log.e("BiliMusic", "处理音频文件失败: " + e.getMessage());
+                                    if (listview != null && listview.getAdapter() != null) {
+                                        ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
+                                    }
+                                    updateNavButtons();
+
+                                    Toast.makeText(MainActivity.this,
+                                            "成功添加 " + successCount.get() + "/" + selectedItems.size() + " 首歌曲",
+                                            Toast.LENGTH_SHORT).show();
+
+                                    if (callback != null) {
+                                        Map<String, Object> finalResult = new HashMap<>();
+                                        finalResult.put("success", true);
+                                        finalResult.put("count", successCount.get());
+                                        callback.onResult(finalResult);
+                                    }
+                                } catch (Exception e) {
+                                    Log.e("BiliMusic", "完成处理失败: " + e.getMessage());
+                                    safeDismissProgressDialog();
+                                }
+                            });
                         }
                     });
-                }
-
-                // 更新进度
-                int progressPercent = (completed * 100) / selectedItems.size();
-                updateProgress(progressPercent, "正在下载视频合集 (" + completed + "/" + selectedItems.size() + ")");
-
-                if (completed == selectedItems.size()) {
-                    // 全部完成
-                    runOnUiThread(() -> {
-                        if (isFinishing() || isDestroyed()) {
-                            safeDismissProgressDialog();
-                            return;
-                        }
-
-                        try {
-                            safeDismissProgressDialog();
-                            updatePlaylistCover(currentPlaylist);
-
-                            if (listview != null && listview.getAdapter() != null) {
-                                ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
-                            }
-                            updateNavButtons();
-
-                            Toast.makeText(MainActivity.this,
-                                "成功添加 " + successCount.get() + "/" + selectedItems.size() + " 首歌曲",
-                                Toast.LENGTH_SHORT).show();
-
-                            if (callback != null) {
-                                Map<String, Object> finalResult = new HashMap<>();
-                                finalResult.put("success", true);
-                                finalResult.put("count", successCount.get());
-                                callback.onResult(finalResult);
-                            }
-                        } catch (Exception e) {
-                            Log.e("BiliMusic", "完成处理失败: " + e.getMessage());
-                            safeDismissProgressDialog();
-                        }
-                    });
-                }
-            });
+        }
     }
-}
 
     private void loadBiliVideoPage(String uid, String fid, int pageNum, int pageSize,
                                    BiliVideoAdapter adapter, ListView listView, ProgressBar loadMoreProgress) {
@@ -2950,7 +2951,7 @@ private void forceCloseProgressDialog() {
 
                 // 检测合集：要么是多P视频，要么是UGC合集
                 boolean isCollection = (pages != null && pages.size() > 1) ||
-                                      (ugcSeason != null && ugcSeason.has("sections"));
+                        (ugcSeason != null && ugcSeason.has("sections"));
 
                 if (isCollection) {
                     Log.d("BiliMusic", "检测到视频合集，显示选择列表");
