@@ -39,6 +39,20 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
+        <!-- 分享歌单按钮 -->
+        <ImageButton
+            android:id="@+id/sharePlaylist"
+            android:layout_width="30dp"
+            android:layout_height="48dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginEnd="2dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="分享歌单"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_share"
+            app:layout_constraintEnd_toStartOf="@+id/addMusic"
+            app:layout_constraintTop_toTopOf="parent" />
+
         <!-- 背景图 -->
         <!--        <ImageView-->
         <!--            android:id="@+id/backgroundImage"-->
