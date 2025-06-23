@@ -64,10 +64,12 @@ public class MusicLoader {
                     int duration = jsonObject.getInt("duration");
                     String name = jsonObject.getString("name");
                     String uriString = jsonObject.getString("filePath");
-                    String coverUrl = jsonObject.optString("coverUrl", ""); // 默认为空
+                    String coverUrl = jsonObject.optString("coverUrl", "");
+                    String onlineSongId = jsonObject.optString("onlineSongId", "");
 
                     Song song = new Song(duration, name, uriString, playlist);
                     song.setCoverUrl(coverUrl);
+                    song.setOnlineSongId(onlineSongId);
                     list.add(song.toMap(index++));
                 } catch (Exception e) {
                     Log.e(TAG, "解析歌曲行失败: " + line, e);
@@ -113,6 +115,7 @@ public class MusicLoader {
                 jsonObject.put("name", song.getName());
                 jsonObject.put("filePath", song.getFilePath());
                 jsonObject.put("coverUrl", song.getCoverUrl() != null ? song.getCoverUrl() : "");
+                jsonObject.put("onlineSongId", song.getOnlineSongId() != null ? song.getOnlineSongId() : "");
 
                 tempWriter.write(jsonObject.toString());
                 tempWriter.newLine();

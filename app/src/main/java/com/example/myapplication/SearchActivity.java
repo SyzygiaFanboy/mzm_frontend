@@ -115,14 +115,25 @@ public class SearchActivity extends AppCompatActivity {
         String cleanPath = serverSong.getSongpath().startsWith("/") ?
                 serverSong.getSongpath().substring(1) :
                 serverSong.getSongpath();
-
+    
         String fullPath = "http://" + serverAddress + "/" + cleanPath;
-
+    
+        // 组合歌手和歌曲名，格式："歌手 - 歌曲名"
+        String musician = serverSong.getMusician();
+        String songName = serverSong.getSongname();
+        String combinedName;
+        
+        if (musician != null && !musician.trim().isEmpty()) {
+            combinedName = musician + " - " + songName;
+        } else {
+            // 如果没有歌手信息，只使用歌曲名
+            combinedName = songName;
+        }
 
         Log.d("SearchActivity", "addToLocalPlaylist: songId = " + serverSong.getSongid());
         Song localSong = new Song(
                 serverSong.getSongduration(),
-                serverSong.getSongname(),
+                combinedName,  // 使用组合后的名称
                 fullPath,
                 currentPlaylist
         );
