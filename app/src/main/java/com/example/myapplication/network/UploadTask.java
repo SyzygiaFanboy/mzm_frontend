@@ -51,6 +51,16 @@ public class UploadTask extends AsyncTask<SelectedSong, Integer, String> {
         }
     }
     
+    // 添加公共方法供BatchUploadTask调用
+    public String uploadSingleFile(SelectedSong song) throws Exception {
+        try {
+            return uploadFile(song);
+        } catch (Exception e) {
+            Log.e(TAG, "上传失败", e);
+            throw e;
+        }
+    }
+    
     private String uploadFile(SelectedSong song) throws IOException {
         String boundary = "----WebKitFormBoundary" + System.currentTimeMillis();
         String lineEnd = "\r\n";

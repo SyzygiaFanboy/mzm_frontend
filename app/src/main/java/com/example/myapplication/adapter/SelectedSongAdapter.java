@@ -14,6 +14,8 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.example.myapplication.R;
 import com.example.myapplication.model.SelectedSong;
 
+import com.example.myapplication.MusicCoverUtils;
+
 import java.util.List;
 
 public class SelectedSongAdapter extends RecyclerView.Adapter<SelectedSongAdapter.ViewHolder> {
@@ -44,6 +46,20 @@ public class SelectedSongAdapter extends RecyclerView.Adapter<SelectedSongAdapte
         
         holder.tvSongName.setText(song.getSongName());
         holder.tvArtist.setText(song.getArtist());
+        
+        // 加载封面
+        String filePath = song.getFilePath();
+        if (filePath == null && song.getUri() != null) {
+            // 如果没有文件路径，使用URI
+            filePath = song.getUri().toString();
+        }
+        
+        if (filePath != null) {
+            MusicCoverUtils.loadCoverSmart(filePath, song.getCoverUrl(), context, holder.ivSongIcon);
+        } else {
+            // 如果都没有，显示默认封面
+            holder.ivSongIcon.setImageResource(R.drawable.default_cover);
+        }
         
         holder.btnRemove.setOnClickListener(v -> {
             if (onRemoveClickListener != null) {

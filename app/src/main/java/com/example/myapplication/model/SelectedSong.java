@@ -8,7 +8,8 @@ public class SelectedSong {
     private int duration;
     private String filePath;
     private Uri uri;
-    private int playCount; // 新增字段
+    private int playCount;
+    private String coverUrl; // 新增封面URL字段
     
     public SelectedSong(String songName, String artist, int duration, String filePath, Uri uri) {
         this.songName = songName;
@@ -16,7 +17,8 @@ public class SelectedSong {
         this.duration = duration;
         this.filePath = filePath;
         this.uri = uri;
-        this.playCount = 0; // 默认播放次数为0
+        this.playCount = 0;
+        this.coverUrl = null; // 默认为null
     }
     
     // Getters and Setters
@@ -37,4 +39,7 @@ public class SelectedSong {
     
     public int getPlayCount() { return playCount; }
     public void setPlayCount(int playCount) { this.playCount = playCount; }
+    
+    public String getCoverUrl() { return coverUrl; }
+    public void setCoverUrl(String coverUrl) { this.coverUrl = coverUrl; }
 }
