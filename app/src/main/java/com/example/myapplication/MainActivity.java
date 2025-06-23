@@ -1221,6 +1221,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     }
 
     @Override
+    protected void onPause() {
+        super.onPause();
+        // 暂停时不关闭进度对话框，但记录状态
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         // 每次返回时重新应用背景，以防用户更改了设置
@@ -1230,11 +1236,40 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
         globalManager.attachToActivity(this);
         globalManager.forceRefresh();
+        // 恢复时检查进度对话框状态
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // Activity不可见时，如果有进度对话框在显示，记录状态但不关闭
+    }
+
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        // 保存当前状态
+        outState.putString("currentPlaylist", currentPlaylist);
+        outState.putBoolean("isDownloading", progressDialog != null && progressDialog.isShowing());
+    }
+
+    @Override
+    protected void onRestoreInstanceState(@NonNull Bundle savedInstanceState) {
+        super.onRestoreInstanceState(savedInstanceState);
+        // 恢复状态
+        currentPlaylist = savedInstanceState.getString("currentPlaylist", "默认歌单");
+        boolean wasDownloading = savedInstanceState.getBoolean("isDownloading", false);
+        if (wasDownloading) {
+            // 如果之前在下载，重新加载歌单
+            loadMusicList(listview, currentPlaylist);
+        }
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        // 确保进度对话框被正确关闭
+        dismissProgressDialog();
         // 从全局管理器中分离
         GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
         globalManager.detachFromActivity(this);
@@ -1330,30 +1365,126 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     }
 
     private void showProgressDialog() {
-        // 使用布局加载器加载自定义布局
-        LayoutInflater inflater = LayoutInflater.from(this);
-        View dialogView = inflater.inflate(R.layout.progress_dialog, null);
-
-        // 获取布局中的控件引用
-        dialogProgressBar = dialogView.findViewById(R.id.progressBarDialog);
-        dialogMessage = dialogView.findViewById(R.id.tvProgressMessage);
-
-        // 默认设置进度为 0
-        dialogProgressBar.setProgress(0);
-        dialogProgressBar.setMax(100);
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setView(dialogView)
-                .setCancelable(false); // 设置不可取消，直到任务完成
-        progressDialog = builder.create();
-        progressDialog.show();
+        // 检查Activity状态
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        
+        // 如果已经有进度对话框在显示，先关闭
+        if (progressDialog != null && progressDialog.isShowing()) {
+            try {
+                progressDialog.dismiss();
+            } catch (Exception e) {
+                Log.e("MainActivity", "关闭旧进度对话框失败: " + e.getMessage());
+            }
+        }
+        
+        try {
+            // 使用布局加载器加载自定义布局
+            LayoutInflater inflater = LayoutInflater.from(this);
+            View dialogView = inflater.inflate(R.layout.progress_dialog, null);
+    
+            // 获取布局中的控件引用
+            dialogProgressBar = dialogView.findViewById(R.id.progressBarDialog);
+            dialogMessage = dialogView.findViewById(R.id.tvProgressMessage);
+    
+            // 默认设置进度为 0
+            if (dialogProgressBar != null) {
+                dialogProgressBar.setProgress(0);
+                dialogProgressBar.setMax(100);
+            }
+            if (dialogMessage != null) {
+                dialogMessage.setText("正在处理...");
+            }
+    
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setView(dialogView)
+                    .setCancelable(false); // 设置不可取消，直到任务完成
+            
+            progressDialog = builder.create();
+            
+            // 确保在主线程中显示
+            if (!isFinishing() && !isDestroyed()) {
+                progressDialog.show();
+            }
+        } catch (Exception e) {
+            Log.e("MainActivity", "显示进度对话框失败: " + e.getMessage());
+            progressDialog = null;
+        }
     }
 
     private void dismissProgressDialog() {
-        if (progressDialog != null && progressDialog.isShowing()) {
-            progressDialog.dismiss();
+        try {
+            if (progressDialog != null) {
+                if (progressDialog.isShowing()) {
+                    progressDialog.dismiss();
+                }
+                progressDialog = null;
+            }
+            // 清空引用
+            dialogProgressBar = null;
+            dialogMessage = null;
+        } catch (Exception e) {
+            Log.e("MainActivity", "关闭进度对话框失败: " + e.getMessage());
+            // 即使出现异常也要清空引用
+            progressDialog = null;
+            dialogProgressBar = null;
+            dialogMessage = null;
         }
     }
+
+    // 安全的进度更新方法
+private void updateProgress(int progress, String message) {
+    runOnUiThread(() -> {
+        try {
+            if (progressDialog != null && progressDialog.isShowing()) {
+                if (dialogProgressBar != null) {
+                    dialogProgressBar.setProgress(progress);
+                }
+                if (dialogMessage != null && message != null) {
+                    dialogMessage.setText(message);
+                }
+            }
+        } catch (Exception e) {
+            Log.e("MainActivity", "更新进度失败: " + e.getMessage());
+        }
+    });
+}
+// 安全的进度显示方法
+private void safeShowProgressDialog() {
+    runOnUiThread(() -> {
+        if (!isFinishing() && !isDestroyed()) {
+            showProgressDialog();
+        }
+    });
+}
+
+// 安全的进度关闭方法
+private void safeDismissProgressDialog() {
+    runOnUiThread(() -> {
+        dismissProgressDialog();
+    });
+}
+
+// 检查进度对话框是否正在显示
+private boolean isProgressDialogShowing() {
+    return progressDialog != null && progressDialog.isShowing();
+}
+
+// 强制关闭进度对话框（用于异常情况）
+private void forceCloseProgressDialog() {
+    try {
+        if (progressDialog != null) {
+            progressDialog.dismiss();
+        }
+    } catch (Exception e) {
+        Log.e("MainActivity", "强制关闭进度对话框失败: " + e.getMessage());
+    } finally {
+        progressDialog = null;
+        dialogProgressBar = null;
+        dialogMessage = null;
+    }
+}
 
     private void copyAndAddMusicFiles(List<Uri> uris) {
         // 在UI线程中显示进度弹窗
@@ -2213,6 +2344,403 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         });
     }
 
+    private void showBiliVideoCollectionDialog(String bvid, JsonObject videoInfo, JsonArray pages, myCallback<Map<String, Object>> callback) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("选择要添加的视频");
+        
+        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_bili_video_list, null);
+        ListView listView = dialogView.findViewById(R.id.lvVideoList);
+        CheckBox cbSelectAll = dialogView.findViewById(R.id.cbSelectAll);
+        TextView tvSelectedCount = dialogView.findViewById(R.id.tvSelectedCount);
+        
+        BiliVideoAdapter adapter = new BiliVideoAdapter(this);
+        listView.setAdapter(adapter);
+        
+        // 解析视频合集信息
+        List<BiliVideoAdapter.BiliVideoItem> videoItems = new ArrayList<>();
+        String mainTitle = videoInfo.get("title").getAsString();
+        String uploader = videoInfo.get("owner").getAsJsonObject().get("name").getAsString();
+        
+        for (int i = 0; i < pages.size(); i++) {
+            JsonObject page = pages.get(i).getAsJsonObject();
+            String pageTitle = page.get("part").getAsString();
+            int duration = page.get("duration").getAsInt();
+            long cid = page.get("cid").getAsLong();
+            
+            // 创建唯一标识：bvid + cid
+            String uniqueId = bvid + "_" + cid;
+            String fullTitle = mainTitle + " - " + pageTitle;
+            
+            BiliVideoAdapter.BiliVideoItem item = new BiliVideoAdapter.BiliVideoItem(
+                uniqueId, fullTitle, uploader, duration);
+            videoItems.add(item);
+        }
+        
+        adapter.addItems(videoItems);
+        
+        // 设置全选逻辑
+        adapter.setOnSelectAllListener(shouldSelectAll -> {
+            cbSelectAll.setOnCheckedChangeListener(null);
+            cbSelectAll.setChecked(shouldSelectAll);
+            cbSelectAll.setOnCheckedChangeListener((buttonView, isChecked) -> adapter.selectAll(isChecked));
+        });
+        
+        adapter.setOnItemSelectListener(selectedCount -> {
+            tvSelectedCount.setText("已选择: " + selectedCount + "/" + videoItems.size());
+            cbSelectAll.setOnCheckedChangeListener(null);
+            cbSelectAll.setChecked(selectedCount == videoItems.size());
+            cbSelectAll.setOnCheckedChangeListener((buttonView, isChecked) -> adapter.selectAll(isChecked));
+        });
+        
+        cbSelectAll.setOnCheckedChangeListener((buttonView, isChecked) -> adapter.selectAll(isChecked));
+        
+        builder.setView(dialogView);
+        builder.setPositiveButton("添加选中项", (dialog, which) -> {
+            List<BiliVideoAdapter.BiliVideoItem> selectedItems = adapter.getSelectedItems();
+            if (selectedItems.isEmpty()) {
+                Toast.makeText(this, "请至少选择一个视频", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            
+            // 批量下载选中的视频
+            downloadSelectedBiliVideos(selectedItems, pages, videoInfo, callback);
+            dialog.dismiss();
+        });
+        
+        builder.setNegativeButton("取消", (dialog, which) -> {
+            callback.onResult(null);
+            dialog.dismiss();
+        });
+        
+        AlertDialog dialog = builder.create();
+        dialog.show();
+    }
+
+    private void showBiliUGCSeasonDialog(String bvid, JsonObject videoInfo, JsonObject ugcSeason, myCallback<Map<String, Object>> callback) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("选择要添加的视频");
+        
+        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_bili_video_list, null);
+        ListView listView = dialogView.findViewById(R.id.lvVideoList);
+        CheckBox cbSelectAll = dialogView.findViewById(R.id.cbSelectAll);
+        TextView tvSelectedCount = dialogView.findViewById(R.id.tvSelectedCount);
+        
+        BiliVideoAdapter adapter = new BiliVideoAdapter(this);
+        listView.setAdapter(adapter);
+        
+        // 分页相关变量
+        final int PAGE_SIZE = 20;
+        AtomicInteger currentPage = new AtomicInteger(0);
+        List<BiliVideoAdapter.BiliVideoItem> allVideoItems = new ArrayList<>();
+        
+        // 解析UGC合集信息
+        String mainTitle = videoInfo.get("title").getAsString();
+        String uploader = videoInfo.get("owner").getAsJsonObject().get("name").getAsString();
+        
+        JsonArray sections = ugcSeason.getAsJsonArray("sections");
+        for (JsonElement sectionElement : sections) {
+            JsonObject section = sectionElement.getAsJsonObject();
+            JsonArray episodes = section.getAsJsonArray("episodes");
+            
+            for (JsonElement episodeElement : episodes) {
+                JsonObject episode = episodeElement.getAsJsonObject();
+                String episodeBvid = episode.get("bvid").getAsString();
+                String episodeTitle = episode.get("title").getAsString();
+                long cid = episode.get("cid").getAsLong();
+                
+                // 获取每个视频的封面URL和时长
+                String episodeCoverUrl = "";
+                int duration = 0;
+                if (episode.has("arc")) {
+                    JsonObject arc = episode.getAsJsonObject("arc");
+                    if (arc.has("pic")) {
+                        episodeCoverUrl = arc.get("pic").getAsString();
+                    }
+                    if (arc.has("duration")) {
+                        duration = arc.get("duration").getAsInt();
+                    }
+                }
+                
+                // 创建唯一标识：bvid + cid + coverUrl
+                String uniqueId = episodeBvid + "_" + cid + "_" + episodeCoverUrl;
+                
+                BiliVideoAdapter.BiliVideoItem item = new BiliVideoAdapter.BiliVideoItem(
+                    uniqueId, episodeTitle, uploader, duration);
+                allVideoItems.add(item);
+            }
+        }
+        
+        // 加载第一页
+        loadPage(adapter, allVideoItems, currentPage.get(), PAGE_SIZE);
+        
+        // 设置滑动监听器实现自动加载更多
+        listView.setOnScrollListener(new AbsListView.OnScrollListener() {
+            private int visibleThreshold = 5;
+            private boolean loading = false;
+            private int previousTotal = 0;
+            
+            @Override
+            public void onScrollStateChanged(AbsListView view, int scrollState) {
+            }
+            
+            @Override
+            public void onScroll(AbsListView view, int firstVisibleItem, int visibleItemCount, int totalItemCount) {
+                if (loading && totalItemCount > previousTotal) {
+                    loading = false;
+                    previousTotal = totalItemCount;
+                }
+                
+                // 检查是否需要加载更多
+                if (!loading && (totalItemCount - visibleItemCount) <= (firstVisibleItem + visibleThreshold)) {
+                    int nextPage = currentPage.get() + 1;
+                    int startIndex = nextPage * PAGE_SIZE;
+                    
+                    // 检查是否还有更多数据
+                    if (startIndex < allVideoItems.size()) {
+                        loading = true;
+                        currentPage.incrementAndGet();
+                        loadPage(adapter, allVideoItems, nextPage, PAGE_SIZE);
+                    }
+                }
+            }
+        });
+        
+        // 设置全选逻辑
+        adapter.setOnSelectAllListener(shouldSelectAll -> {
+            cbSelectAll.setOnCheckedChangeListener(null);
+            cbSelectAll.setChecked(shouldSelectAll);
+            cbSelectAll.setOnCheckedChangeListener((buttonView, isChecked) -> adapter.selectAll(isChecked));
+        });
+        
+        adapter.setOnItemSelectListener(selectedCount -> {
+            tvSelectedCount.setText("已选择: " + selectedCount + "/" + adapter.getCount());
+            cbSelectAll.setOnCheckedChangeListener(null);
+            cbSelectAll.setChecked(selectedCount == adapter.getCount());
+            cbSelectAll.setOnCheckedChangeListener((buttonView, isChecked) -> adapter.selectAll(isChecked));
+        });
+        
+        cbSelectAll.setOnCheckedChangeListener((buttonView, isChecked) -> adapter.selectAll(isChecked));
+        
+        builder.setView(dialogView);
+        builder.setPositiveButton("添加选中项", (dialog, which) -> {
+            List<BiliVideoAdapter.BiliVideoItem> selectedItems = adapter.getSelectedItems();
+            if (selectedItems.isEmpty()) {
+                Toast.makeText(this, "请至少选择一个视频", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            
+            // 批量下载选中的视频
+            downloadSelectedUGCVideos(selectedItems, videoInfo, callback);
+            dialog.dismiss();
+        });
+        
+        builder.setNegativeButton("取消", (dialog, which) -> {
+            callback.onResult(null);
+            dialog.dismiss();
+        });
+        
+        AlertDialog dialog = builder.create();
+        dialog.show();
+    }
+    
+    // 新增分页加载方法
+    private void loadPage(BiliVideoAdapter adapter, List<BiliVideoAdapter.BiliVideoItem> allItems, int page, int pageSize) {
+        int startIndex = page * pageSize;
+        int endIndex = Math.min(startIndex + pageSize, allItems.size());
+        
+        if (startIndex < allItems.size()) {
+            List<BiliVideoAdapter.BiliVideoItem> pageItems = allItems.subList(startIndex, endIndex);
+            adapter.addItems(pageItems);
+        }
+    }
+
+    private void downloadSelectedUGCVideos(List<BiliVideoAdapter.BiliVideoItem> selectedItems, 
+                                      JsonObject videoInfo, 
+                                      myCallback<Map<String, Object>> callback) {
+    
+    safeShowProgressDialog();
+    updateProgress(0, "正在下载视频合集 (0/" + selectedItems.size() + ")");
+    
+    AtomicInteger completedCount = new AtomicInteger(0);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    for (BiliVideoAdapter.BiliVideoItem item : selectedItems) {
+        // 从uniqueId中提取bvid、cid和coverUrl
+        String[] parts = item.getBvid().split("_");
+        String bvid = parts[0];
+        long cid = Long.parseLong(parts[1]);
+        String coverUrl = parts.length > 2 ? parts[2] : videoInfo.get("pic").getAsString();
+
+        // 下载单个视频，使用正确的封面URL
+        downloadSingleBiliVideo(bvid, cid, item.getTitle(), coverUrl,
+            result -> {
+                int completed = completedCount.incrementAndGet();
+                if (result != null) {
+                    successCount.incrementAndGet();
+                    
+                    // 添加到播放列表
+                    runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed()) {
+                            return;
+                        }
+                        
+                        try {
+                            String title = (String) result.get("title");
+                            File f = (File) result.get("file");
+                            String resultCoverUrl = (String) result.get("coverUrl");
+                            String path = f.getAbsolutePath();
+                            
+                            MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+                            retriever.setDataSource(path);
+                            String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                            int duration = Integer.parseInt(durationStr) / 1000;
+                            
+                            Song newSong = new Song(duration, title, path, currentPlaylist);
+                            newSong.setCoverUrl(resultCoverUrl);
+                            addSongToPlaylist(newSong);
+                            MusicLoader.appendMusic(this, newSong);
+                            
+                            retriever.release();
+                        } catch (Exception e) {
+                            Log.e("BiliMusic", "处理音频文件失败: " + e.getMessage());
+                        }
+                    });
+                }
+                
+                // 更新进度
+                int progressPercent = (completed * 100) / selectedItems.size();
+                updateProgress(progressPercent, "正在下载视频合集 (" + completed + "/" + selectedItems.size() + ")");
+                
+                if (completed == selectedItems.size()) {
+                    // 全部完成
+                    runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed()) {
+                            safeDismissProgressDialog();
+                            return;
+                        }
+                        
+                        try {
+                            safeDismissProgressDialog();
+                            updatePlaylistCover(currentPlaylist);
+                            
+                            if (listview != null && listview.getAdapter() != null) {
+                                ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
+                            }
+                            updateNavButtons();
+                            
+                            Toast.makeText(MainActivity.this, 
+                                "成功添加 " + successCount.get() + "/" + selectedItems.size() + " 首歌曲", 
+                                Toast.LENGTH_SHORT).show();
+                            
+                            if (callback != null) {
+                                Map<String, Object> finalResult = new HashMap<>();
+                                finalResult.put("success", true);
+                                finalResult.put("count", successCount.get());
+                                callback.onResult(finalResult);
+                            }
+                        } catch (Exception e) {
+                            Log.e("BiliMusic", "完成处理失败: " + e.getMessage());
+                            safeDismissProgressDialog();
+                        }
+                    });
+                }
+            });
+    }
+}
+
+    private void downloadSelectedBiliVideos(List<BiliVideoAdapter.BiliVideoItem> selectedItems, 
+                                       JsonArray pages, JsonObject videoInfo, 
+                                       myCallback<Map<String, Object>> callback) {
+    
+    safeShowProgressDialog();
+    updateProgress(0, "正在下载视频合集 (0/" + selectedItems.size() + ")");
+    
+    AtomicInteger completedCount = new AtomicInteger(0);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    for (BiliVideoAdapter.BiliVideoItem item : selectedItems) {
+        // 从uniqueId中提取cid
+        String[] parts = item.getBvid().split("_");
+        String bvid = parts[0];
+        long cid = Long.parseLong(parts[1]);
+        
+        // 下载单个视频
+        downloadSingleBiliVideo(bvid, cid, item.getTitle(), videoInfo.get("pic").getAsString(), 
+            result -> {
+                int completed = completedCount.incrementAndGet();
+                if (result != null) {
+                    successCount.incrementAndGet();
+                    
+                    // 添加到播放列表
+                    runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed()) {
+                            return;
+                        }
+                        
+                        String title = (String) result.get("title");
+                        File f = (File) result.get("file");
+                        String coverUrl = (String) result.get("coverUrl");
+                        String path = f.getAbsolutePath();
+                        
+                        try {
+                            MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+                            retriever.setDataSource(path);
+                            String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                            int duration = Integer.parseInt(durationStr) / 1000;
+                            
+                            Song newSong = new Song(duration, title, path, currentPlaylist);
+                            newSong.setCoverUrl(coverUrl);
+                            addSongToPlaylist(newSong);
+                            MusicLoader.appendMusic(this, newSong);
+                            
+                            retriever.release();
+                        } catch (Exception e) {
+                            Log.e("BiliMusic", "处理音频文件失败: " + e.getMessage());
+                        }
+                    });
+                }
+                
+                // 更新进度
+                int progressPercent = (completed * 100) / selectedItems.size();
+                updateProgress(progressPercent, "正在下载视频合集 (" + completed + "/" + selectedItems.size() + ")");
+                
+                if (completed == selectedItems.size()) {
+                    // 全部完成
+                    runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed()) {
+                            safeDismissProgressDialog();
+                            return;
+                        }
+                        
+                        try {
+                            safeDismissProgressDialog();
+                            updatePlaylistCover(currentPlaylist);
+                            
+                            if (listview != null && listview.getAdapter() != null) {
+                                ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
+                            }
+                            updateNavButtons();
+                            
+                            Toast.makeText(MainActivity.this, 
+                                "成功添加 " + successCount.get() + "/" + selectedItems.size() + " 首歌曲", 
+                                Toast.LENGTH_SHORT).show();
+                            
+                            if (callback != null) {
+                                Map<String, Object> finalResult = new HashMap<>();
+                                finalResult.put("success", true);
+                                finalResult.put("count", successCount.get());
+                                callback.onResult(finalResult);
+                            }
+                        } catch (Exception e) {
+                            Log.e("BiliMusic", "完成处理失败: " + e.getMessage());
+                            safeDismissProgressDialog();
+                        }
+                    });
+                }
+            });
+    }
+}
+
     private void loadBiliVideoPage(String uid, String fid, int pageNum, int pageSize,
                                    BiliVideoAdapter adapter, ListView listView, ProgressBar loadMoreProgress) {
         // 如果是第一页，显示进度对话框
@@ -2364,8 +2892,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     private void getBiliMusic(String bv, Context context, myCallback<Map<String, Object>> callback) {
         OkHttpClient client = new OkHttpClient();
 
-        // 获取音频流要av/bv的同时还要cid
-        // Step 1: 获取 CID
+        // 获取视频信息
         Request cidRequest = new Request.Builder()
                 .url("https://api.bilibili.com/x/web-interface/view?bvid=" + bv)
                 .addHeader("User-Agent", "Mozilla/5.0")
@@ -2381,104 +2908,135 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
             @Override
             public void onResponse(@NonNull Call call, @NonNull Response res) throws IOException {
-                // 转成json取得cid
                 String str = res.body().string();
+                Log.d("BiliMusic", "API响应: " + str); // 调试
+                
                 JsonObject json = JsonParser.parseString(str).getAsJsonObject().get("data").getAsJsonObject();
-                long cid = json.get("cid").getAsLong();
-                Log.i("BiliMusic", "获取到的CID: " + cid);
+                
+                // 检查是否为视频合集
+                JsonArray pages = json.getAsJsonArray("pages");
+                JsonObject ugcSeason = json.has("ugc_season") ? json.getAsJsonObject("ugc_season") : null;
+                Log.d("BiliMusic", "Pages数量: " + (pages != null ? pages.size() : "null"));
+                Log.d("BiliMusic", "UGC Season: " + (ugcSeason != null ? "存在" : "不存在"));
 
-                // 顺带获取标题，用于歌曲显示。但文件名还是bv号，防止文件名异常
-                String title = json.get("title").getAsString();
-                // 也顺带拿个封面
-                String coverUrl = json.get("pic").getAsString();
+                // 检测合集：要么是多P视频，要么是UGC合集
+                boolean isCollection = (pages != null && pages.size() > 1) || 
+                                      (ugcSeason != null && ugcSeason.has("sections"));
 
-                // Step 2: 获取音频 URL
-                HttpUrl url = Objects.requireNonNull(HttpUrl.parse("https://api.bilibili.com/x/player/playurl"))
-                        .newBuilder()
-                        .addQueryParameter("bvid", bv)
-                        .addQueryParameter("cid", String.valueOf(cid))
-                        .addQueryParameter("fnval", "16")
-                        .build();
+                if (isCollection) {
+                    Log.d("BiliMusic", "检测到视频合集，显示选择列表");
+                    // 处理合集逻辑
+                    if (ugcSeason != null) {
+                        // UGC合集，需要从sections中提取视频列表
+                        runOnUiThread(() -> showBiliUGCSeasonDialog(bv, json, ugcSeason, callback));
+                    } else {
+                        // 多P视频
+                        runOnUiThread(() -> showBiliVideoCollectionDialog(bv, json, pages, callback));
+                    }
+                } else {
+                    Log.d("BiliMusic", "单个视频，继续原有逻辑");
+                    // 单个视频，继续原有逻辑
+                    long cid = json.get("cid").getAsLong();
+                    String title = json.get("title").getAsString();
+                    String coverUrl = json.get("pic").getAsString();
+                    
+                    downloadSingleBiliVideo(bv, cid, title, coverUrl, callback);
+                }
+            }
+        });
+    }
 
-                Request audioUrlReq = new Request.Builder()
-                        .url(url)
+    private void downloadSingleBiliVideo(String bv, long cid, String title, String coverUrl, myCallback<Map<String, Object>> callback) {
+        OkHttpClient client = new OkHttpClient();
+        
+        // Step 2: 获取音频 URL
+        HttpUrl url = Objects.requireNonNull(HttpUrl.parse("https://api.bilibili.com/x/player/playurl"))
+                .newBuilder()
+                .addQueryParameter("bvid", bv)
+                .addQueryParameter("cid", String.valueOf(cid))
+                .addQueryParameter("fnval", "16")
+                .build();
+
+        Request audioUrlReq = new Request.Builder()
+                .url(url)
+                .addHeader("User-Agent", "Mozilla/5.0")
+                .addHeader("Referer", "https://www.bilibili.com/")
+                .build();
+
+        client.newCall(audioUrlReq).enqueue(new Callback() {
+            @Override
+            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "获取音频URL失败: " + e.getMessage(), Toast.LENGTH_SHORT)
+                        .show());
+                callback.onResult(null);
+            }
+
+            @Override
+            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                // 请求dash，分离视频和音频流
+                String json = response.body().string();
+                JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
+                JsonArray audioArray = obj.get("data").getAsJsonObject()
+                        .get("dash").getAsJsonObject()
+                        .get("audio").getAsJsonArray();
+
+                // 防止没有高质量音频
+                String audioUrl;
+                if (audioArray.size() > 2) {
+                    audioUrl = audioArray.get(2).getAsJsonObject().get("baseUrl").getAsString();
+                } else if (audioArray.size() > 1) {
+                    audioUrl = audioArray.get(1).getAsJsonObject().get("baseUrl").getAsString();
+                } else {
+                    audioUrl = audioArray.get(0).getAsJsonObject().get("baseUrl").getAsString();
+                }
+                Log.i("BiliMusic", "获取到的音频URL: " + audioUrl);
+
+                // Step 3: 下载音频文件
+                Request downloadReq = new Request.Builder()
+                        .url(audioUrl)
                         .addHeader("User-Agent", "Mozilla/5.0")
                         .addHeader("Referer", "https://www.bilibili.com/")
                         .build();
 
-                client.newCall(audioUrlReq).enqueue(new Callback() {
+                client.newCall(downloadReq).enqueue(new Callback() {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        runOnUiThread(() -> Toast.makeText(context, "获取音频URL失败: " + e.getMessage(), Toast.LENGTH_SHORT)
-                                .show());
+                        runOnUiThread(() -> Toast
+                                .makeText(MainActivity.this, "下载失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                        callback.onResult(null);
                     }
 
                     @Override
-                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                        // 请求dash，分离视频和音频流
-                        String json = response.body().string();
-                        JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
-                        JsonArray audioArray = obj.get("data").getAsJsonObject()
-                                .get("dash").getAsJsonObject()
-                                .get("audio").getAsJsonArray();
+                    public void onResponse(@NonNull Call call, @NonNull Response response) {
+                        // 生成唯一文件名（对于合集视频使用bv_cid格式）
+                        String fileName = bv + "_" + cid + ".mp3";
+                        File audioFile = new File(MainActivity.this.getExternalFilesDir("audio"), fileName);
+                        try (InputStream in = response.body().byteStream();
+                             FileOutputStream out = new FileOutputStream(audioFile)) {
+                            byte[] buffer = new byte[4096];
+                            int len;
+                            while ((len = in.read(buffer)) != -1) {
+                                out.write(buffer, 0, len);
+                            }
 
-                        // 防止没有高质量音频
-                        String audioUrl;
-                        if (audioArray.size() > 2) {
-                            audioUrl = audioArray.get(2).getAsJsonObject().get("baseUrl").getAsString();
-                        } else if (audioArray.size() > 1) {
-                            audioUrl = audioArray.get(1).getAsJsonObject().get("baseUrl").getAsString();
-                        } else {
-                            audioUrl = audioArray.get(0).getAsJsonObject().get("baseUrl").getAsString();
+                            // 预加载封面到缓存
+                            if (coverUrl != null && !coverUrl.isEmpty()) {
+                                MusicCoverUtils.preloadCover(coverUrl, MainActivity.this);
+                            }
+
+                            // 把东西放一起返回，包括封面URL
+                            Map<String, Object> result = new HashMap<>();
+                            result.put("file", audioFile);
+                            result.put("title", title);
+                            result.put("coverUrl", coverUrl); // 添加封面URL
+
+                            callback.onResult(result);
+                        } catch (IOException e) {
+                            Log.e("BiliMusic", "下载文件失败: ", e);
+                            callback.onResult(null); // 获取失败
+                            runOnUiThread(() -> Toast
+                                    .makeText(MainActivity.this, "下载失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
                         }
-                        Log.i("BiliMusic", "获取到的音频URL: " + audioUrl);
-
-                        // Step 3: 下载音频文件
-                        Request downloadReq = new Request.Builder()
-                                .url(audioUrl)
-                                .addHeader("User-Agent", "Mozilla/5.0")
-                                .addHeader("Referer", "https://www.bilibili.com/")
-                                .build();
-
-                        client.newCall(downloadReq).enqueue(new Callback() {
-                            @Override
-                            public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                                runOnUiThread(() -> Toast
-                                        .makeText(context, "下载失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
-                            }
-
-                            @Override
-                            public void onResponse(@NonNull Call call, @NonNull Response response) {
-                                // 存的文件名还是用bv号
-                                File audioFile = new File(context.getExternalFilesDir("audio"), bv + ".mp3");
-                                try (InputStream in = response.body().byteStream();
-                                     FileOutputStream out = new FileOutputStream(audioFile)) {
-                                    byte[] buffer = new byte[4096];
-                                    int len;
-                                    while ((len = in.read(buffer)) != -1) {
-                                        out.write(buffer, 0, len);
-                                    }
-
-                                    // 预加载封面到缓存
-                                    if (coverUrl != null && !coverUrl.isEmpty()) {
-                                        MusicCoverUtils.preloadCover(coverUrl, context);
-                                    }
-
-                                    // 把东西放一起返回，包括封面URL
-                                    Map<String, Object> result = new HashMap<>();
-                                    result.put("file", audioFile);
-                                    result.put("title", title);
-                                    result.put("coverUrl", coverUrl); // 添加封面URL
-
-                                    callback.onResult(result);
-                                } catch (IOException e) {
-                                    Log.e("BiliMusic", "下载文件失败: ", e);
-                                    callback.onResult(null); // 获取失败
-                                    runOnUiThread(() -> Toast
-                                            .makeText(context, "下载失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
-                                }
-                            }
-                        });
                     }
                 });
             }

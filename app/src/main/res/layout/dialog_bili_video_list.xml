@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="8dp">
+
+        <CheckBox
+            android:id="@+id/cbSelectAll"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="全选" />
+
+        <TextView
+            android:id="@+id/tvSelectedCount"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="已选择: 0/0"
+            android:gravity="end"
+            android:textSize="14sp" />
+
+    </LinearLayout>
+
+    <ListView
+        android:id="@+id/lvVideoList"
+        android:layout_width="match_parent"
+        android:layout_height="300dp"
+        android:divider="@android:color/darker_gray"
+        android:dividerHeight="1dp" />
+
+    <!-- 在ListView下方添加 -->
+    <Button
+        android:id="@+id/btnLoadMore"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="加载更多"
+        android:layout_marginTop="8dp" />
+</LinearLayout>
