@@ -146,7 +146,7 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         Playlist playlist = playlists.get(position);
-
+    
         String coverPath = playlist.getLatestCoverPath();
         if (coverPath != null && !coverPath.isEmpty()) {
             Bitmap coverBitmap = MusicCoverUtils.getCoverFromFile(coverPath, context);
@@ -160,23 +160,27 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
         }
         holder.tvName.setText(playlist.getName());
         holder.tvCount.setText("歌曲数：" + playlist.getSongCount());
-
+    
         holder.cbSelect.setVisibility(inManageMode ? View.VISIBLE : View.GONE);
         holder.cbSelect.setChecked(selectedList.get(position));
-
+    
         holder.ivHandle.setVisibility(inManageMode ? View.VISIBLE : View.GONE);
-
+    
         // 添加正在播放歌单的高亮效果
         if (currentPlayingPlaylist != null && currentPlayingPlaylist.equals(playlist.getName())) {
             holder.itemView.setBackgroundColor(android.graphics.Color.parseColor("#c69bc5"));
             holder.tvName.setTextColor(context.getResources().getColor(android.R.color.white, null));
             holder.tvCount.setTextColor(context.getResources().getColor(android.R.color.white, null));
+            // 设置拖拽按钮为白色，避免高亮颜色覆盖
+            if (inManageMode) {
+                holder.ivHandle.setColorFilter(context.getResources().getColor(android.R.color.white, null));
+            }
         } else {
             android.util.TypedValue typedValue = new android.util.TypedValue();
             context.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, typedValue, true);
             holder.itemView.setBackgroundResource(typedValue.resourceId);
             
-            // 修复：使用正确的方式获取默认文字颜色
+            // 使用正确的方式获取默认文字颜色
             android.util.TypedValue textColorValue = new android.util.TypedValue();
             context.getTheme().resolveAttribute(android.R.attr.textColorPrimary, textColorValue, true);
             int primaryColor = context.getResources().getColor(textColorValue.resourceId, context.getTheme());
@@ -185,6 +189,10 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
             context.getTheme().resolveAttribute(android.R.attr.textColorSecondary, textColorValue, true);
             int secondaryColor = context.getResources().getColor(textColorValue.resourceId, context.getTheme());
             holder.tvCount.setTextColor(secondaryColor);
+            // 恢复拖拽按钮的默认颜色
+            if (inManageMode) {
+                holder.ivHandle.clearColorFilter();
+            }
         }
 
         holder.cbSelect.setOnClickListener(v -> toggleSelected(position));

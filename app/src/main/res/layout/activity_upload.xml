@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#FFFFFF">
+    >
 
     <!-- 顶部工具栏 -->
     <androidx.constraintlayout.widget.ConstraintLayout
@@ -66,7 +66,7 @@
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:background="#F5F5F5"
+
                     android:gravity="center"
                     android:orientation="vertical">
 
@@ -81,15 +81,15 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="点击选择音乐文件"
-                        android:textColor="#666666"
+
                         android:textSize="16sp" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
-                        android:text="支持 MP3、WAV、FLAC 格式"
-                        android:textColor="#999999"
+                        android:text="支持 MP3、FLAC 格式"
+
                         android:textSize="12sp" />
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
@@ -117,7 +117,7 @@
                 android:layout_height="100dp"
                 android:gravity="center"
                 android:text="暂无选中的歌曲"
-                android:textColor="#CCCCCC"
+
                 android:textSize="14sp"
                 android:visibility="visible" />
         </LinearLayout>
@@ -129,10 +129,9 @@
         android:layout_width="match_parent"
         android:layout_height="48dp"
         android:layout_margin="16dp"
-        android:background="@drawable/bg_toolbar_fade"
+
         android:enabled="false"
         android:text="上传歌曲"
-        android:textColor="#FFFFFF"
         android:textSize="16sp"
         android:textStyle="bold" />
 

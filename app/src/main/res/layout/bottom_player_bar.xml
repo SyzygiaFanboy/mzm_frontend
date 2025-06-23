@@ -32,7 +32,7 @@
             android:ellipsize="end"
             android:maxLines="1"
             android:text="暂无歌曲"
-            android:textColor="#333333"
+
             android:textSize="14sp"
             android:textStyle="bold" />
 
@@ -44,7 +44,7 @@
             android:ellipsize="end"
             android:maxLines="1"
             android:text="未知艺术家"
-            android:textColor="#666666"
+
             android:textSize="12sp" />
     </LinearLayout>
 

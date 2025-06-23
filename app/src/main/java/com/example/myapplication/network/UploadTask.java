@@ -19,7 +19,7 @@ import java.util.UUID;
 
 public class UploadTask extends AsyncTask<SelectedSong, Integer, String> {
     private static final String TAG = "UploadTask";
-    private static final String UPLOAD_URL = "http://192.168.19.196:8080/SongServlet";
+    private static final String UPLOAD_URL = "http://192.168.1.100:8080/SongServlet";
     
     private Context context;
     private UploadCallback callback;
