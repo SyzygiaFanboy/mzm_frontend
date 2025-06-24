@@ -117,7 +117,6 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         itemTouchHelper.attachToRecyclerView(recyclerView);
 
         // 设置点击监听
-        // 设置点击监听
         adapter.setOnItemClickListener(position -> {
             String selected = playlists.get(position).getName();
             Intent intent = new Intent(this, MainActivity.class);

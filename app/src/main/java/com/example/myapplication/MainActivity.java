@@ -2207,6 +2207,9 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         inputLayout.addView(userId);
         inputLayout.addView(collectionName);
         builder.setView(inputLayout);
+        
+        // 设置不可取消，用户只能通过按钮退出
+        builder.setCancelable(false);
 
         builder.setPositiveButton("确定", (dialog, which) -> {
             String uid = userId.getText().toString().trim();
@@ -2293,10 +2296,22 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         });
 
         builder.setNegativeButton("取消", (dialog, which) -> {
+            // 确保关闭可能存在的进度条
+            dismissProgressDialog();
             callback.onResult(null); // 取消则返回 null
         });
 
         AlertDialog dialog = builder.create();
+        // 再次确保弹窗不可取消
+        dialog.setCancelable(false);
+        dialog.setCanceledOnTouchOutside(false);
+        
+        // 设置弹窗关闭监听器，防止意外关闭时进度条不消失
+        dialog.setOnDismissListener(dialogInterface -> {
+            // 如果弹窗被意外关闭，确保进度条也被关闭
+            dismissProgressDialog();
+        });
+        
         dialog.show();
     }
 
