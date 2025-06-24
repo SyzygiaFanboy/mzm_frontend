@@ -36,8 +36,16 @@ public class LoginActivity extends AppCompatActivity {
             Map<String, String> params = new HashMap<>();
             params.put("username", username);
             params.put("password", password);
+            // 检查是否填写完整信息
+            if (username.isEmpty() || password.isEmpty()) {
+                Toast.makeText(this, "请填写完整信息", Toast.LENGTH_SHORT).show();
+                Log.d("登录与注册-登录", "请填写完整信息");
+                return;
+            }
+
 
             if ("1".equals(username) && "1".equals(password)) {
+                Log.d("登录与注册-登录", "登录成功");
                 saveLoginStatus(true);
                 startActivity(new Intent(LoginActivity.this, PlaylistListActivity.class));
                 finish();
@@ -67,9 +75,9 @@ public class LoginActivity extends AppCompatActivity {
                 public void onFailure(String error) {
                     try {
                         Socket s = new Socket("10.0.2.2", 8080);
-                        Log.d("网络测试", "连接成功！");
+                        Log.d("登录与注册-网络测试", "连接成功！");
                     } catch (IOException e) {
-                        Log.e("网络测试", "连接失败：" + e.getMessage());
+                        Log.e("登录与注册-网络测试", "连接失败：" + e.getMessage());
                     }
 
 
@@ -86,21 +94,6 @@ public class LoginActivity extends AppCompatActivity {
         });
     }
 
-    private boolean validateUser(String username, String password) {
-        try (FileInputStream fis = openFileInput("user.txt");
-             BufferedReader br = new BufferedReader(new InputStreamReader(fis))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                String[] parts = line.split(":");
-                if (parts.length == 2 && parts[0].equals(username) && parts[1].equals(password)) {
-                    return true;
-                }
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        return false;
-    }
 
     private void saveLoginStatus(boolean isLoggedIn) {
         SharedPreferences preferences = getSharedPreferences("user_pref", MODE_PRIVATE);

@@ -32,11 +32,13 @@ public class RegisterActivity extends AppCompatActivity {
 
             if( username.isEmpty() || password.isEmpty() || confirmPassword.isEmpty()) {
                 Toast.makeText(this, "用户名或密码不能为空", Toast.LENGTH_SHORT).show();
+                Log.d("登录与注册-注册", "请填写完整信息");
                 return;
             }
 
             if (!password.equals(confirmPassword)) {
                 Toast.makeText(this, "两次密码不一致", Toast.LENGTH_SHORT).show();
+                Log.d("登录与注册-注册", "用户名已存在");
                 return;
             }
 
@@ -50,6 +52,7 @@ public class RegisterActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         switch (response) {
                             case "SUCCESS":
+                                Log.d("登录与注册-注册", "注册成功");
                                 startActivity(new Intent(RegisterActivity.this, LoginActivity.class));
                                 finish();
                                 break;
@@ -71,15 +74,5 @@ public class RegisterActivity extends AppCompatActivity {
                 }
             });
         });
-
-    }
-
-    private void saveUserToFile(String username, String password) {
-        String data = username + ":" + password + "\n";
-        try (FileOutputStream fos = openFileOutput("user.txt", MODE_APPEND)) {
-            fos.write(data.getBytes());
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
     }
 }

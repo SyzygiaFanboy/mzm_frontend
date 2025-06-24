@@ -35,12 +35,4 @@
         android:layout_height="300dp"
         android:divider="@android:color/darker_gray"
         android:dividerHeight="1dp" />
-
-    <!-- 在ListView下方添加 -->
-    <Button
-        android:id="@+id/btnLoadMore"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="加载更多"
-        android:layout_marginTop="8dp" />
 </LinearLayout>
