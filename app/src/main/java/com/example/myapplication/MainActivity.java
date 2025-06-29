@@ -1568,6 +1568,13 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                         MusicLoader.appendMusic(this, song);
                         addSongToPlaylist(song);
                     }
+
+                    // 更新高亮音乐位置
+                    int pos = selectedPosition;
+                    if (pos >= 0) {
+                        selectedPosition = pos + newSongs.size();
+                    }
+
                     BatchModeAdapter adapter = (BatchModeAdapter) listview.getAdapter();
                     if (adapter != null) {
                         adapter.setData(musicList);

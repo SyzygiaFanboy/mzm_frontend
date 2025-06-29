@@ -1,5 +1,7 @@
 package com.example.myapplication.network;
 
+import static com.example.myapplication.HttpUtil.BASE_URL;
+
 import android.content.Context;
 import android.net.Uri;
 import android.os.AsyncTask;
@@ -17,7 +19,7 @@ import java.net.URL;
 
 public class UploadTask extends AsyncTask<SelectedSong, Integer, String> {
     private static final String TAG = "UploadTask";
-    private static final String UPLOAD_URL = "http://192.168.0.22:8080/SongServlet";
+    private static final String UPLOAD_URL = BASE_URL + "/SongServlet";
 
     private Context context;
     private UploadCallback callback;
