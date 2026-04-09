@@ -44,6 +44,7 @@ import com.example.myapplication.adapter.PlaylistItemTouchHelperCallback;
 import com.example.myapplication.adapter.PlaylistRecyclerAdapter;
 import com.example.myapplication.model.Playlist;
 import com.example.myapplication.model.Song;
+import com.example.myapplication.utils.SongDeletionUtils;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -54,6 +55,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public class PlaylistListActivity extends AppCompatActivity implements PlaylistRecyclerAdapter.OnStartDragListener {
@@ -158,20 +160,57 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         // 删除所选
         btnDelete.setOnClickListener(v -> {
             List<Integer> selected = adapter.getSelectedIndices();
-            selected.sort(Collections.reverseOrder()); // 先删除后面的，防止下标错乱
-
-            for (int index : selected) {
-                Playlist p = playlists.get(index);
-                try {
-                    MusicLoader.removePlaylistEntries(this, p.getName());
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-                adapter.removeAt(index);
+            if (selected.isEmpty()) {
+                Toast.makeText(PlaylistListActivity.this, "请先选择要删除的歌单", Toast.LENGTH_SHORT).show();
+                return;
             }
 
-            savePlaylist();
-            updateAllSongCounts();
+            LinearLayout layout = new LinearLayout(PlaylistListActivity.this);
+            layout.setOrientation(LinearLayout.VERTICAL);
+            layout.setPadding(50, 20, 50, 10);
+
+            android.widget.TextView message = new android.widget.TextView(PlaylistListActivity.this);
+            message.setText("确定要删除所选歌单吗？");
+            message.setTextSize(16);
+            layout.addView(message);
+
+            CheckBox cbDeleteFiles = new CheckBox(PlaylistListActivity.this);
+            cbDeleteFiles.setText("同时删除歌单内本App下载/导入的音频文件");
+            cbDeleteFiles.setChecked(true);
+            layout.addView(cbDeleteFiles);
+
+            new AlertDialog.Builder(PlaylistListActivity.this)
+                    .setTitle("确认删除")
+                    .setView(layout)
+                    .setPositiveButton("确定", (dialog, which) -> {
+                        boolean shouldDeleteFiles = cbDeleteFiles.isChecked();
+
+                        selected.sort(Collections.reverseOrder());
+                        for (int index : selected) {
+                            Playlist p = playlists.get(index);
+                            List<Map<String, Object>> songs = MusicLoader.loadSongs(PlaylistListActivity.this, p.getName());
+                            for (Map<String, Object> songMap : songs) {
+                                Song s = Song.fromMap(songMap);
+                                SongDeletionUtils.deleteCoverCaches(PlaylistListActivity.this, s.getName(), s.getCoverUrl());
+                                if (shouldDeleteFiles) {
+                                    SongDeletionUtils.deleteAppOwnedAudioFile(PlaylistListActivity.this, s.getFilePath());
+                                }
+                            }
+
+                            try {
+                                MusicLoader.removePlaylistEntries(PlaylistListActivity.this, p.getName());
+                            } catch (IOException e) {
+                                throw new RuntimeException(e);
+                            }
+                            adapter.removeAt(index);
+                        }
+
+                        savePlaylist();
+                        updateAllSongCounts();
+                        dialog.dismiss();
+                    })
+                    .setNegativeButton("取消", (dialog, which) -> dialog.dismiss())
+                    .show();
         });
 
         btnNew.setOnClickListener(v -> showCreateDialog());
@@ -198,7 +237,6 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
             toolbar.setNavigationIcon(navIcon);
         }
 
-        // 注释掉或删除原有的搜索在线音乐按钮点击事件
         /*
         findViewById(R.id.menu_search).setOnClickListener(v -> {
             Intent intent = new Intent(this, SearchActivity.class);
@@ -635,47 +673,64 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         androidx.drawerlayout.widget.DrawerLayout drawerLayout = findViewById(R.id.drawer_layout);
         if (drawerLayout != null) {
             if (playlistBgPath != null && new File(playlistBgPath).exists()) {
-                // 为歌单页面设置自定义背景
-                try {
-                    // 获取屏幕尺寸
-                    int screenWidth = getResources().getDisplayMetrics().widthPixels;
-                    int screenHeight = getResources().getDisplayMetrics().heightPixels;
+                int screenWidth = getResources().getDisplayMetrics().widthPixels;
+                int screenHeight = getResources().getDisplayMetrics().heightPixels;
 
-                    // 加载并缩放图片
-                    Bitmap originalBitmap = BitmapFactory.decodeFile(playlistBgPath);
-                    if (originalBitmap != null) {
-                        // 创建缩放后的位图，使用CENTER_CROP效果
-                        Bitmap scaledBitmap = createScaledBitmap(originalBitmap, screenWidth, screenHeight);
-
-                        // 应用模糊效果（如果有的话）
-                        Bitmap processedBitmap = scaledBitmap;
-                        if (blurRadius > 0) {
-                            processedBitmap = blurBitmap(scaledBitmap, blurRadius);
-                            if (processedBitmap != scaledBitmap) {
-                                scaledBitmap.recycle();
+                new Thread(() -> {
+                    Bitmap outputBitmap = null;
+                    try {
+                        Bitmap originalBitmap = decodeSampledBitmapFromFile(playlistBgPath, screenWidth, screenHeight);
+                        if (originalBitmap != null) {
+                            Bitmap scaledBitmap = createScaledBitmap(originalBitmap, screenWidth, screenHeight);
+                            Bitmap processedBitmap = scaledBitmap;
+                            if (blurRadius > 0) {
+                                processedBitmap = blurBitmap(scaledBitmap, blurRadius);
+                                if (processedBitmap != scaledBitmap) {
+                                    scaledBitmap.recycle();
+                                }
                             }
+                            if (originalBitmap != processedBitmap) {
+                                originalBitmap.recycle();
+                            }
+                            outputBitmap = processedBitmap;
                         }
-
-                        // 创建背景drawable
-                        BitmapDrawable backgroundDrawable = new BitmapDrawable(getResources(), processedBitmap);
-                        backgroundDrawable.setAlpha(transparency); // 使用保存的透明度
-                        drawerLayout.setBackground(backgroundDrawable);
-
-                        // 回收原始位图
-                        if (originalBitmap != processedBitmap) {
-                            originalBitmap.recycle();
-                        }
+                    } catch (Exception e) {
+                        e.printStackTrace();
                     }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    // 如果加载失败，恢复默认背景
-                    drawerLayout.setBackgroundResource(0);
-                }
+
+                    Bitmap finalBitmap = outputBitmap;
+                    runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed()) {
+                            if (finalBitmap != null) {
+                                finalBitmap.recycle();
+                            }
+                            return;
+                        }
+                        if (finalBitmap != null) {
+                            BitmapDrawable backgroundDrawable = new BitmapDrawable(getResources(), finalBitmap);
+                            backgroundDrawable.setAlpha(transparency);
+                            drawerLayout.setBackground(backgroundDrawable);
+                        } else {
+                            drawerLayout.setBackgroundResource(0);
+                        }
+                    });
+                }).start();
             } else {
                 // 恢复默认背景
                 drawerLayout.setBackgroundResource(0);
             }
         }
+    }
+
+    private Bitmap decodeSampledBitmapFromFile(String path, int reqWidth, int reqHeight) {
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(path, options);
+
+        options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight);
+        options.inJustDecodeBounds = false;
+        options.inPreferredConfig = Bitmap.Config.RGB_565;
+        return BitmapFactory.decodeFile(path, options);
     }
 
     // 保持原有的图片缩放方法不变

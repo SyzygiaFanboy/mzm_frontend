@@ -27,10 +27,15 @@ public class BiliVideoAdapter extends BaseAdapter {
     private final List<BiliVideoItem> videoItems;
     private OnSelectAllListener selectAllListener;
     private OnItemSelectListener itemSelectListener;
+    private String highlightBvid = null; // 需要高亮的 bvid
 
     public BiliVideoAdapter(Context context) {
         this.context = context;
         this.videoItems = new ArrayList<>();
+    }
+
+    public void setHighlightBvid(String bvid) {
+        this.highlightBvid = bvid;
     }
 
     public void setOnSelectAllListener(OnSelectAllListener listener) {
@@ -105,6 +110,13 @@ public class BiliVideoAdapter extends BaseAdapter {
         holder.tvTitle.setText(item.getTitle());
         holder.tvUploader.setText(item.getUploader());
         holder.tvDuration.setText(formatDuration(item.getDuration()));
+
+        // 如果该视频是我们想要找的，高亮背景
+        if (highlightBvid != null && item.getBvid().contains(highlightBvid)) {
+            convertView.setBackgroundColor(0x33FF0000); // 半透明红色高亮
+        } else {
+            convertView.setBackgroundColor(0x00000000); // 默认透明背景
+        }
 
         // 避免CheckBox状态错乱
         holder.cbSelect.setOnCheckedChangeListener(null);

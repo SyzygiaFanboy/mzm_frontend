@@ -1,7 +1,5 @@
 package com.example.myapplication.network;
 
-import static com.example.myapplication.HttpUtil.BASE_URL;
-
 import android.content.Context;
 import android.net.Uri;
 import android.os.AsyncTask;
@@ -14,12 +12,13 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 
 public class UploadTask extends AsyncTask<SelectedSong, Integer, String> {
     private static final String TAG = "UploadTask";
-    private static final String UPLOAD_URL = BASE_URL + "/SongServlet";
+    private static final String UPLOAD_URL = ServerConfig.songUploadUrl();
 
     private Context context;
     private UploadCallback callback;
@@ -72,6 +71,8 @@ public class UploadTask extends AsyncTask<SelectedSong, Integer, String> {
         Log.d(TAG, "正在连接URL: " + UPLOAD_URL);
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 
+        connection.setConnectTimeout(10_000);
+        connection.setReadTimeout(30_000);
         connection.setDoInput(true);
         connection.setDoOutput(true);
         connection.setUseCaches(false);
@@ -80,119 +81,158 @@ public class UploadTask extends AsyncTask<SelectedSong, Integer, String> {
         connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
         connection.setRequestProperty("Accept-Charset", "UTF-8");
 
-        DataOutputStream outputStream = new DataOutputStream(connection.getOutputStream());
-
-        // 方法1：使用URL编码（推荐）
+        DataOutputStream outputStream = null;
         try {
-            // 对日文字符进行URL编码
-            String encodedSongName = java.net.URLEncoder.encode(song.getSongName(), "UTF-8");
-            String encodedArtist = java.net.URLEncoder.encode(song.getArtist(), "UTF-8");
+            outputStream = new DataOutputStream(connection.getOutputStream());
 
-            Log.d(TAG, "原始歌曲名: " + song.getSongName());
-            Log.d(TAG, "URL编码后: " + encodedSongName);
-            Log.d(TAG, "原始艺术家: " + song.getArtist());
-            Log.d(TAG, "URL编码后: " + encodedArtist);
+            // 方法1：使用URL编码（推荐）
+            try {
+                // 对日文字符进行URL编码
+                String encodedSongName = java.net.URLEncoder.encode(song.getSongName(), "UTF-8");
+                String encodedArtist = java.net.URLEncoder.encode(song.getArtist(), "UTF-8");
 
-            // 添加歌曲名称参数
-            outputStream.writeBytes(twoHyphens + boundary + lineEnd);
-            outputStream.writeBytes("Content-Disposition: form-data; name=\"Songname\"" + lineEnd);
-            outputStream.writeBytes(lineEnd);
-            outputStream.writeBytes(encodedSongName);
-            outputStream.writeBytes(lineEnd);
+                Log.d(TAG, "原始歌曲名: " + song.getSongName());
+                Log.d(TAG, "URL编码后: " + encodedSongName);
+                Log.d(TAG, "原始艺术家: " + song.getArtist());
+                Log.d(TAG, "URL编码后: " + encodedArtist);
 
-            // 添加艺术家参数
-            outputStream.writeBytes(twoHyphens + boundary + lineEnd);
-            outputStream.writeBytes("Content-Disposition: form-data; name=\"musician\"" + lineEnd);
-            outputStream.writeBytes(lineEnd);
-            outputStream.writeBytes(encodedArtist);
-            outputStream.writeBytes(lineEnd);
+                // 添加歌曲名称参数
+                outputStream.writeBytes(twoHyphens + boundary + lineEnd);
+                outputStream.writeBytes("Content-Disposition: form-data; name=\"Songname\"" + lineEnd);
+                outputStream.writeBytes(lineEnd);
+                outputStream.writeBytes(encodedSongName);
+                outputStream.writeBytes(lineEnd);
 
-            // 添加歌曲时长参数
-            outputStream.writeBytes(twoHyphens + boundary + lineEnd);
-            outputStream.writeBytes("Content-Disposition: form-data; name=\"songduration\"" + lineEnd);
-            outputStream.writeBytes(lineEnd);
-            outputStream.writeBytes(String.valueOf(song.getDuration() / 1000));
-            outputStream.writeBytes(lineEnd);
+                // 添加艺术家参数
+                outputStream.writeBytes(twoHyphens + boundary + lineEnd);
+                outputStream.writeBytes("Content-Disposition: form-data; name=\"musician\"" + lineEnd);
+                outputStream.writeBytes(lineEnd);
+                outputStream.writeBytes(encodedArtist);
+                outputStream.writeBytes(lineEnd);
 
-        } catch (Exception e) {
-            Log.e(TAG, "编码失败", e);
-            throw new IOException("字符编码失败: " + e.getMessage());
-        }
+                // 添加歌曲时长参数
+                outputStream.writeBytes(twoHyphens + boundary + lineEnd);
+                outputStream.writeBytes("Content-Disposition: form-data; name=\"songduration\"" + lineEnd);
+                outputStream.writeBytes(lineEnd);
+                outputStream.writeBytes(String.valueOf(song.getDuration() / 1000));
+                outputStream.writeBytes(lineEnd);
 
-        // 文件上传部分保持不变
-        InputStream inputStream = null;
-        String fileName = "unknown.mp3";
-        long fileSize = 0;
+            } catch (Exception e) {
+                Log.e(TAG, "编码失败", e);
+                throw new IOException("字符编码失败: " + e.getMessage());
+            }
 
-        try {
-            // 优先使用文件路径
-            if (song.getFilePath() != null && !song.getFilePath().isEmpty()) {
-                File file = new File(song.getFilePath());
-                if (file.exists()) {
-                    inputStream = new FileInputStream(file);
-                    fileName = file.getName();
-                    fileSize = file.length();
-                } else {
-                    Log.w(TAG, "文件路径无效，尝试使用URI: " + song.getFilePath());
+            // 文件上传部分保持不变
+            InputStream inputStream = null;
+            String fileName = "unknown.mp3";
+            long fileSize = 0;
+
+            try {
+                // 优先使用文件路径
+                if (song.getFilePath() != null && !song.getFilePath().isEmpty()) {
+                    File file = new File(song.getFilePath());
+                    if (file.exists()) {
+                        inputStream = new FileInputStream(file);
+                        fileName = file.getName();
+                        fileSize = file.length();
+                    } else {
+                        Log.w(TAG, "文件路径无效，尝试使用URI: " + song.getFilePath());
+                    }
+                }
+
+                // 如果文件路径无效，使用URI
+                if (inputStream == null && song.getUri() != null) {
+                    inputStream = context.getContentResolver().openInputStream(song.getUri());
+                    fileName = getFileNameFromUri(song.getUri());
+                    fileSize = -1;
+                }
+
+                if (inputStream == null) {
+                    throw new IOException("无法打开文件: filePath=" + song.getFilePath() + ", uri=" + song.getUri());
+                }
+
+                // 文件上传
+                outputStream.writeBytes(twoHyphens + boundary + lineEnd);
+                outputStream.writeBytes("Content-Disposition: form-data; name=\"SongFile\"; filename=\"" + fileName + "\"" + lineEnd);
+                outputStream.writeBytes("Content-Type: audio/mpeg" + lineEnd);
+                outputStream.writeBytes(lineEnd);
+
+                // 读取并写入文件数据
+                byte[] buffer = new byte[4096];
+                int bytesRead;
+                long uploadedBytes = 0;
+
+                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                    outputStream.write(buffer, 0, bytesRead);
+                    uploadedBytes += bytesRead;
+
+                    if (fileSize > 0) {
+                        int progress = (int) ((uploadedBytes * 100) / fileSize);
+                        publishProgress(progress);
+                    }
+                }
+            } finally {
+                if (inputStream != null) {
+                    inputStream.close();
                 }
             }
 
-            // 如果文件路径无效，使用URI
-            if (inputStream == null && song.getUri() != null) {
-                inputStream = context.getContentResolver().openInputStream(song.getUri());
-                fileName = getFileNameFromUri(song.getUri());
-                fileSize = -1;
-            }
-
-            if (inputStream == null) {
-                throw new IOException("无法打开文件: filePath=" + song.getFilePath() + ", uri=" + song.getUri());
-            }
-
-            // 文件上传
-            outputStream.writeBytes(twoHyphens + boundary + lineEnd);
-            outputStream.writeBytes("Content-Disposition: form-data; name=\"SongFile\"; filename=\"" + fileName + "\"" + lineEnd);
-            outputStream.writeBytes("Content-Type: audio/mpeg" + lineEnd);
             outputStream.writeBytes(lineEnd);
-
-            // 读取并写入文件数据
-            byte[] buffer = new byte[4096];
-            int bytesRead;
-            long uploadedBytes = 0;
-
-            while ((bytesRead = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, bytesRead);
-                uploadedBytes += bytesRead;
-
-                if (fileSize > 0) {
-                    int progress = (int) ((uploadedBytes * 100) / fileSize);
-                    publishProgress(progress);
-                }
-            }
-
+            outputStream.writeBytes(twoHyphens + boundary + twoHyphens + lineEnd);
+            outputStream.flush();
         } finally {
-            if (inputStream != null) {
-                inputStream.close();
+            if (outputStream != null) {
+                try {
+                    outputStream.close();
+                } catch (IOException ignored) {
+                }
             }
         }
 
-        outputStream.writeBytes(lineEnd);
-        outputStream.writeBytes(twoHyphens + boundary + twoHyphens + lineEnd);
-        outputStream.flush();
-        outputStream.close();
+        // 获取响应（尽量把服务端返回体也带出来，方便定位）
+        int responseCode;
+        String responseBody = "";
+        try {
+            responseCode = connection.getResponseCode();
+            InputStream respStream = (responseCode >= 400) ? connection.getErrorStream() : connection.getInputStream();
+            responseBody = readStreamSafely(respStream, 32 * 1024);
+        } catch (Exception e) {
+            Log.e(TAG, "读取响应失败", e);
+            responseCode = -1;
+            responseBody = "读取响应失败: " + e.getMessage();
+        } finally {
+            connection.disconnect();
+        }
 
-        // 获取响应
-        int responseCode = connection.getResponseCode();
-        Log.d(TAG, "服务器响应码: " + responseCode);
+        Log.d(TAG, "服务器响应码: " + responseCode + ", 响应体: " + responseBody);
 
         if (responseCode == HttpURLConnection.HTTP_NOT_FOUND) {
-            return "404错误：服务器找不到请求的资源 " + UPLOAD_URL;
+            return "404错误：服务器找不到请求的资源 " + UPLOAD_URL + (responseBody.isEmpty() ? "" : ("\n" + responseBody));
         }
 
         if (responseCode == HttpURLConnection.HTTP_OK) {
             return "SUCCESS";
         } else {
-            return "服务器响应错误: " + responseCode;
+            String bodyHint = responseBody == null || responseBody.isEmpty() ? "" : ("\n" + responseBody);
+            return "服务器响应错误: " + responseCode + bodyHint;
         }
+    }
+
+    private static String readStreamSafely(InputStream in, int maxBytes) throws IOException {
+        if (in == null) return "";
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[4096];
+        int total = 0;
+        int n;
+        while ((n = in.read(buf)) != -1) {
+            if (total + n > maxBytes) {
+                out.write(buf, 0, Math.max(0, maxBytes - total));
+                break;
+            }
+            out.write(buf, 0, n);
+            total += n;
+        }
+        return out.toString("UTF-8");
     }
 
     /**

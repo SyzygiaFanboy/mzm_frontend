@@ -167,7 +167,7 @@ public class GlobalBottomPlayerManager {
         }
     }
 
-    // 在loadBottomCover方法中修改 (大约第164-170行)
+    // 在loadBottomCover方法中修改
     private void loadBottomCover(Activity activity, String filePath) {
         if (currentSong != null && activity != null) {
             String coverUrl = currentSong.getCoverUrl();
@@ -176,7 +176,7 @@ public class GlobalBottomPlayerManager {
             // 如果coverUrl为空，尝试从缓存中获取
             if ((coverUrl == null || coverUrl.isEmpty()) && filePath.contains(".mp3")) {
                 // 对于B站音乐，尝试从文件名推断coverUrl或使用缓存
-                // 这里可以添加更智能的coverUrl恢复逻辑
+                // 这里可以添加更好的coverUrl恢复逻辑
             }
             
             MusicCoverUtils.loadCoverSmart(filePath, coverUrl, activity, bottomAlbumCover);

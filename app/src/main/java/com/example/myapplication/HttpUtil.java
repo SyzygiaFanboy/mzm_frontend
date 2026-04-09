@@ -14,7 +14,7 @@ import okhttp3.Response;
 
 //发送请求
 public class HttpUtil {
-    public static final String BASE_URL = "http://192.168.0.22:8080";
+    public static final String BASE_URL = com.example.myapplication.network.ServerConfig.baseUrl();
 
     public static void post(String endpoint, Map<String, String> params,
                             final HttpCallback callback) {

@@ -55,6 +55,7 @@ import com.example.myapplication.adapter.BiliVideoAdapter;
 import com.example.myapplication.model.MusicViewModel;
 import com.example.myapplication.model.Song;
 import com.example.myapplication.utils.ImageCacheManager;
+import com.example.myapplication.utils.SongDeletionUtils;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -261,6 +262,18 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         // 加载歌单但不影响播放状态
         loadMusicList(listview, currentPlaylist);
 
+        new Thread(() -> {
+            try {
+                java.util.Set<String> keep = MusicLoader.loadAllSongFilePaths(MainActivity.this);
+                int deleted = SongDeletionUtils.cleanupOrphanedAppOwnedAudioFiles(MainActivity.this, keep);
+                if (deleted > 0) {
+                    Log.d(TAG, "已清理无引用下载文件: " + deleted);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "清理无引用下载文件失败: " + e.getMessage());
+            }
+        }).start();
+
         if (musicList.isEmpty()) {
             btnNext.setEnabled(false);
             btnPrevious.setEnabled(false);
@@ -384,79 +397,108 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         ImageButton btnBatchDelete = findViewById(R.id.btnBatchDelete);
         btnBatchDelete.setVisibility(View.GONE);
         btnBatchDelete.setOnClickListener(v -> {
-            // 遍历 musicList，删除选中的项
-            List<Map<String, Object>> itemsToDelete = new ArrayList<>();
-
-            for (int i = 0; i < musicList.size(); i++) {
-
-                if ((Boolean) musicList.get(i).get("isSelected")) {
-                    itemsToDelete.add(musicList.get(i));
-                }
-            }
-
-            boolean isCurrentSongDeleted = false;
-            Song currentSong = musicPlayer.getCurrentSong(); // 这里用一个for循环而不是直接将已选择的currentsong传入将会增加运行时间，但是一时半会他也想不出更好的判读办法了
-            String currentPath = (currentSong != null) ? currentSong.getFilePath() : "";
-            for (Map<String, Object> item : itemsToDelete) {
-                Song songItem = Song.fromMap(item);
-                if (songItem.getFilePath().equals(currentPath)) {
-                    isCurrentSongDeleted = true;
-                    break;
-                }
-            }
-            if (isCurrentSongDeleted) {
-                musicPlayer.resetProgress();
-                runOnUiThread(() -> {
-                    if (musicPlayer.isPlaying()) {
-                        musicPlayer.stop(); // 停止播放
-                        musicPlayer.release(); // 释放资源（如果MusicPlayer有该方法）
-                    }
-                    progressBar.setProgress(0);
-                    preogress.setText("请选择歌曲");
-                    albumArt.setImageResource(R.drawable.default_cover);
-                    TextView currentSongTV = findViewById(R.id.currentSong);
-                    currentSongTV.setText("当前播放：暂无歌曲");
-                    playBtn.setText("播放");
-                    playBtn.setEnabled(false);
-                    selectedPosition = -1;
-                    listview.clearChoices(); // 清除所有选中状态
-                    listview.requestLayout(); // 强制刷新
-                });
-            }
-
-            // 直接遍历列表，记录选中项的位置
             List<Integer> positionsToDelete = new ArrayList<>();
+            List<Song> songsToDelete = new ArrayList<>();
             for (int i = 0; i < musicList.size(); i++) {
                 if ((Boolean) musicList.get(i).get("isSelected")) {
                     positionsToDelete.add(i); // 直接记录索引
+                    songsToDelete.add(Song.fromMap(musicList.get(i)));
                 }
             }
-            // 逆序删除避免索引错乱
-            positionsToDelete.sort(Collections.reverseOrder());
-            for (int pos : positionsToDelete) {
-                musicList.remove(pos);
-            }
-            // 统一更新索引
-            updateSongIndices();
-            updatePersistentStorage();
-            // 刷新列表
-            ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
 
-            // 退出批量模式
-            isBatchMode = false;
-            ((BatchModeAdapter) listview.getAdapter()).setBatchMode(false);
-            cbSelectAll.setVisibility(View.GONE); // 隐藏全选复选框
-            cbSelectAll.setChecked(false); // 取消全选状态
-            findViewById(R.id.btnMoveUp).setVisibility(View.VISIBLE);
-            findViewById(R.id.btnMoveDown).setVisibility(View.VISIBLE);
-            findViewById(R.id.btnBatchDelete).setVisibility(View.GONE);
-            if (musicList.isEmpty()) {
-                runOnUiThread(() -> {
-                    btnNext.setEnabled(false);
-                    btnPrevious.setEnabled(false);
-                    playBtn.setEnabled(false);
-                });
+            if (positionsToDelete.isEmpty()) {
+                Toast.makeText(MainActivity.this, "请先选择要删除的歌曲", Toast.LENGTH_SHORT).show();
+                return;
             }
+
+            LinearLayout layout = new LinearLayout(MainActivity.this);
+            layout.setOrientation(LinearLayout.VERTICAL);
+            layout.setPadding(50, 20, 50, 10);
+
+            TextView message = new TextView(MainActivity.this);
+            message.setText("确定要删除所选歌曲吗？");
+            message.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+            layout.addView(message);
+
+            CheckBox cbDeleteFile = new CheckBox(MainActivity.this);
+            cbDeleteFile.setText("同时删除对应文件（仅限App下载/导入目录）");
+            cbDeleteFile.setChecked(true);
+            layout.addView(cbDeleteFile);
+
+            AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+            builder.setTitle("确认删除")
+                    .setView(layout)
+                    .setPositiveButton("确定", (dialog, which) -> {
+                        boolean shouldDeleteFiles = cbDeleteFile.isChecked();
+
+                        for (Song s : songsToDelete) {
+                            SongDeletionUtils.deleteCoverCaches(MainActivity.this, s.getName(), s.getCoverUrl());
+                            if (shouldDeleteFiles) {
+                                SongDeletionUtils.deleteAppOwnedAudioFile(MainActivity.this, s.getFilePath());
+                            }
+                        }
+
+                        boolean isCurrentSongDeleted = false;
+                        Song currentSong = musicPlayer.getCurrentSong();
+                        String currentPath = (currentSong != null) ? currentSong.getFilePath() : "";
+                        for (Song s : songsToDelete) {
+                            if (s.getFilePath().equals(currentPath)) {
+                                isCurrentSongDeleted = true;
+                                break;
+                            }
+                        }
+
+                        if (isCurrentSongDeleted) {
+                            musicPlayer.resetProgress();
+                            runOnUiThread(() -> {
+                                if (musicPlayer.isPlaying()) {
+                                    musicPlayer.stop();
+                                    musicPlayer.release();
+                                }
+                                progressBar.setProgress(0);
+                                preogress.setText("请选择歌曲");
+                                albumArt.setImageResource(R.drawable.default_cover);
+                                TextView currentSongTV = findViewById(R.id.currentSong);
+                                currentSongTV.setText("当前播放：暂无歌曲");
+                                playBtn.setText("播放");
+                                playBtn.setEnabled(false);
+                                selectedPosition = -1;
+                                listview.clearChoices();
+                                listview.requestLayout();
+                            });
+                        }
+
+                        positionsToDelete.sort(Collections.reverseOrder());
+                        for (int pos : positionsToDelete) {
+                            musicList.remove(pos);
+                        }
+                        updateSongIndices();
+                        updatePersistentStorage();
+
+                        BatchModeAdapter adapter = (BatchModeAdapter) listview.getAdapter();
+                        if (adapter != null) {
+                            adapter.setData(musicList);
+                            adapter.setBatchMode(false);
+                        }
+
+                        isBatchMode = false;
+                        cbSelectAll.setVisibility(View.GONE);
+                        cbSelectAll.setChecked(false);
+                        findViewById(R.id.btnMoveUp).setVisibility(View.VISIBLE);
+                        findViewById(R.id.btnMoveDown).setVisibility(View.VISIBLE);
+                        findViewById(R.id.btnBatchDelete).setVisibility(View.GONE);
+                        if (musicList.isEmpty()) {
+                            runOnUiThread(() -> {
+                                btnNext.setEnabled(false);
+                                btnPrevious.setEnabled(false);
+                                playBtn.setEnabled(false);
+                            });
+                        }
+
+                        dialog.dismiss();
+                    })
+                    .setNegativeButton("取消", (dialog, which) -> dialog.dismiss());
+            builder.create().show();
         });
         // 初始化全选复选框
         cbSelectAll = findViewById(R.id.cbSelectAll);
@@ -1161,39 +1203,74 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         androidx.drawerlayout.widget.DrawerLayout drawerLayout = findViewById(R.id.drawer_layout);
         if (drawerLayout != null) {
             if (playbackBgPath != null && new File(playbackBgPath).exists()) {
-                // 设置自定义背景
-                try {
-                    // 获取屏幕尺寸
-                    int screenWidth = getResources().getDisplayMetrics().widthPixels;
-                    int screenHeight = getResources().getDisplayMetrics().heightPixels;
+                int screenWidth = getResources().getDisplayMetrics().widthPixels;
+                int screenHeight = getResources().getDisplayMetrics().heightPixels;
 
-                    // 加载并缩放图片
-                    Bitmap originalBitmap = BitmapFactory.decodeFile(playbackBgPath);
-                    if (originalBitmap != null) {
-                        // 创建缩放后的位图，使用CENTER_CROP效果
-                        Bitmap scaledBitmap = createScaledBitmapForImageView(originalBitmap, screenWidth, screenHeight);
-
-                        // 创建背景drawable
-                        android.graphics.drawable.BitmapDrawable backgroundDrawable = new android.graphics.drawable.BitmapDrawable(
-                                getResources(), scaledBitmap);
-                        backgroundDrawable.setAlpha(180); // 设置透明度，保证文字可见
-                        drawerLayout.setBackground(backgroundDrawable);
-
-                        // 回收原始位图
-                        if (originalBitmap != scaledBitmap) {
-                            originalBitmap.recycle();
+                new Thread(() -> {
+                    Bitmap outputBitmap = null;
+                    try {
+                        Bitmap originalBitmap = decodeSampledBitmapFromFile(playbackBgPath, screenWidth, screenHeight);
+                        if (originalBitmap != null) {
+                            Bitmap scaledBitmap = createScaledBitmapForImageView(originalBitmap, screenWidth, screenHeight);
+                            if (originalBitmap != scaledBitmap) {
+                                originalBitmap.recycle();
+                            }
+                            outputBitmap = scaledBitmap;
                         }
+                    } catch (Exception e) {
+                        e.printStackTrace();
                     }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    // 如果加载失败，设置系统主题背景
-                    setSystemThemeBackground(drawerLayout);
-                }
+
+                    Bitmap finalBitmap = outputBitmap;
+                    runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed()) {
+                            if (finalBitmap != null) {
+                                finalBitmap.recycle();
+                            }
+                            return;
+                        }
+                        if (finalBitmap != null) {
+                            android.graphics.drawable.BitmapDrawable backgroundDrawable = new android.graphics.drawable.BitmapDrawable(
+                                    getResources(), finalBitmap);
+                            backgroundDrawable.setAlpha(180);
+                            drawerLayout.setBackground(backgroundDrawable);
+                        } else {
+                            setSystemThemeBackground(drawerLayout);
+                        }
+                    });
+                }).start();
             } else {
                 // 设置系统主题背景
                 setSystemThemeBackground(drawerLayout);
             }
         }
+    }
+
+    private Bitmap decodeSampledBitmapFromFile(String path, int reqWidth, int reqHeight) {
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(path, options);
+
+        options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight);
+        options.inJustDecodeBounds = false;
+        options.inPreferredConfig = Bitmap.Config.RGB_565;
+        return BitmapFactory.decodeFile(path, options);
+    }
+
+    private int calculateInSampleSize(BitmapFactory.Options options, int reqWidth, int reqHeight) {
+        int height = options.outHeight;
+        int width = options.outWidth;
+        int inSampleSize = 1;
+
+        if (height > reqHeight || width > reqWidth) {
+            int halfHeight = height / 2;
+            int halfWidth = width / 2;
+            while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2;
+            }
+        }
+
+        return Math.max(1, inSampleSize);
     }
 
     // 新增方法：设置系统主题背景
@@ -1704,16 +1781,22 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     }
 
     // 删除音乐，注意只是删除按钮的逻辑，复选框逻辑在初始化那块写了，闲得无聊可以合并一下
-    private void deleteSelectedSong(int position) {
+    private void deleteSelectedSong(int position, boolean deleteLocalFile) {
 
         // 检查索引有效性
         if (position < 0 || position >= musicList.size()) {
             Toast.makeText(this, "无效的删除位置", Toast.LENGTH_SHORT).show();
             return;
         }
+
+        Song songToDelete = Song.fromMap(musicList.get(position));
+        SongDeletionUtils.deleteCoverCaches(this, songToDelete.getName(), songToDelete.getCoverUrl());
+        if (deleteLocalFile) {
+            SongDeletionUtils.deleteAppOwnedAudioFile(this, songToDelete.getFilePath());
+        }
+
         Song currentSong = musicPlayer.getCurrentSong();
-        boolean isCurrentSongDeleted = currentSong != null &&
-                Song.fromMap(musicList.get(position)).equals(currentSong);
+        boolean isCurrentSongDeleted = currentSong != null && songToDelete.equals(currentSong);
         if (selectedPositions.contains(position)) {
             selectedPositions.remove((Integer) position);
         }
@@ -1721,16 +1804,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         // 检查是否删除的是当前播放歌曲
         // boolean isCurrentSongDeleted = false;
 
-        if (currentSong != null) {
-            Map<String, Object> deletedSongMap = musicList.get(position);
-            Song deletedSong = Song.fromMap(deletedSongMap);
-            if (deletedSong.equals(currentSong)) {
-                musicPlayer.stop();
-                progressBar.setProgress(0);
-                preogress.setText("请选择歌曲");
-                isCurrentSongDeleted = true;
-                playBtn.setEnabled(false);
-            }
+        if (currentSong != null && songToDelete.equals(currentSong)) {
+            musicPlayer.stop();
+            progressBar.setProgress(0);
+            preogress.setText("请选择歌曲");
+            isCurrentSongDeleted = true;
+            playBtn.setEnabled(false);
         }
         if (isCurrentSongDeleted) {
             // 终止进度同步线程
@@ -1850,11 +1929,16 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         message.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         layout.addView(message);
 
+        CheckBox cbDeleteFile = new CheckBox(this);
+        cbDeleteFile.setText("同时删除对应文件（仅限App下载/导入目录）");
+        cbDeleteFile.setChecked(true);
+        layout.addView(cbDeleteFile);
+
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("确认删除")
                 .setView(layout) // 设置动态创建的布局
                 .setPositiveButton("确定", (dialog, which) -> {
-                    deleteSelectedSong(selectedPosition); // 传递复选框状态
+                    deleteSelectedSong(selectedPosition, cbDeleteFile.isChecked());
                     dialog.dismiss();
                 })
                 .setNegativeButton("取消", (dialog, which) -> dialog.dismiss());
@@ -2396,7 +2480,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         });
     }
 
-    private void showBiliVideoCollectionDialog(String bvid, JsonObject videoInfo, JsonArray pages, biliCallback<Map<String, Object>> callback) {
+    private void showBiliVideoCollectionDialog(String bvid, JsonObject videoInfo, JsonArray pages, long targetCid, biliCallback<Map<String, Object>> callback) {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("选择要添加的视频");
 
@@ -2406,12 +2490,18 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         TextView tvSelectedCount = dialogView.findViewById(R.id.tvSelectedCount);
 
         BiliVideoAdapter adapter = new BiliVideoAdapter(this);
+        // 如果有 targetCid，设置高亮标识
+        if (targetCid != -1) {
+            adapter.setHighlightBvid(bvid + "_" + targetCid);
+        }
         listView.setAdapter(adapter);
 
         // 解析视频合集信息
         List<BiliVideoAdapter.BiliVideoItem> videoItems = new ArrayList<>();
         String mainTitle = videoInfo.get("title").getAsString();
         String uploader = videoInfo.get("owner").getAsJsonObject().get("name").getAsString();
+        
+        int targetIndex = -1;
 
         for (int i = 0; i < pages.size(); i++) {
             JsonObject page = pages.get(i).getAsJsonObject();
@@ -2425,10 +2515,22 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
             BiliVideoAdapter.BiliVideoItem item = new BiliVideoAdapter.BiliVideoItem(
                     uniqueId, fullTitle, uploader, duration);
+                    
+            if (cid == targetCid) {
+                targetIndex = i;
+                item.setSelected(true); // 默认选中目标项
+            }
+                    
             videoItems.add(item);
         }
 
         adapter.addItems(videoItems);
+        
+        // 滚动到目标项
+        if (targetIndex != -1) {
+            final int scrollIndex = targetIndex;
+            listView.post(() -> listView.setSelection(scrollIndex));
+        }
 
         // 设置全选逻辑
         adapter.setOnSelectAllListener(shouldSelectAll -> {
@@ -2468,7 +2570,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         dialog.show();
     }
 
-    private void showBiliUGCSeasonDialog(String bvid, JsonObject videoInfo, JsonObject ugcSeason, biliCallback<Map<String, Object>> callback) {
+    private void showBiliUGCSeasonDialog(String bvid, JsonObject videoInfo, JsonObject ugcSeason, long targetCid, biliCallback<Map<String, Object>> callback) {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("选择要添加的视频");
 
@@ -2488,6 +2590,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         // 解析UGC合集信息
         String mainTitle = videoInfo.get("title").getAsString();
         String uploader = videoInfo.get("owner").getAsJsonObject().get("name").getAsString();
+
+        int targetGlobalIndex = -1;
 
         JsonArray sections = ugcSeason.getAsJsonArray("sections");
         for (JsonElement sectionElement : sections) {
@@ -2518,12 +2622,33 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
                 BiliVideoAdapter.BiliVideoItem item = new BiliVideoAdapter.BiliVideoItem(
                         uniqueId, episodeTitle, uploader, duration);
+                        
+                if (cid == targetCid) {
+                    targetGlobalIndex = allVideoItems.size();
+                    item.setSelected(true);
+                    adapter.setHighlightBvid(episodeBvid + "_" + targetCid);
+                }
+                        
                 allVideoItems.add(item);
             }
         }
 
-        // 加载第一页
-        loadPage(adapter, allVideoItems, currentPage.get(), PAGE_SIZE);
+        // 计算目标视频所在的页码并加载到该页
+        if (targetGlobalIndex != -1) {
+            int targetPage = targetGlobalIndex / PAGE_SIZE;
+            currentPage.set(targetPage);
+            // 将从第0页到目标页的所有数据一次性加载到Adapter中
+            for (int p = 0; p <= targetPage; p++) {
+                loadPage(adapter, allVideoItems, p, PAGE_SIZE);
+            }
+            
+            // 滚动到目标项
+            final int scrollIndex = targetGlobalIndex;
+            listView.post(() -> listView.setSelection(scrollIndex));
+        } else {
+            // 没有目标视频，只加载第一页
+            loadPage(adapter, allVideoItems, currentPage.get(), PAGE_SIZE);
+        }
 
         // 设置滑动监听器实现自动加载更多
         listView.setOnScrollListener(new AbsListView.OnScrollListener() {
@@ -2977,13 +3102,16 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
                 if (isCollection) {
                     Log.d("BiliMusic", "检测到视频合集，显示选择列表");
+                    // 尝试提取目标P对应的 cid 以便高亮
+                    long targetCid = json.has("cid") ? json.get("cid").getAsLong() : -1;
+                    
                     // 处理合集逻辑
                     if (ugcSeason != null) {
                         // UGC合集，需要从sections中提取视频列表
-                        runOnUiThread(() -> showBiliUGCSeasonDialog(bv, json, ugcSeason, callback));
+                        runOnUiThread(() -> showBiliUGCSeasonDialog(bv, json, ugcSeason, targetCid, callback));
                     } else {
                         // 多P视频
-                        runOnUiThread(() -> showBiliVideoCollectionDialog(bv, json, pages, callback));
+                        runOnUiThread(() -> showBiliVideoCollectionDialog(bv, json, pages, targetCid, callback));
                     }
                 } else {
                     Log.d("BiliMusic", "单个视频，继续原有逻辑");

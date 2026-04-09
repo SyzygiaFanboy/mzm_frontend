@@ -1,6 +1,5 @@
 package com.example.myapplication;
 
-import static com.example.myapplication.HttpUtil.BASE_URL;
 import static com.example.myapplication.MainActivity.addSongToPlaylist;
 
 import android.app.AlertDialog;
@@ -32,7 +31,6 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -50,7 +48,7 @@ import okhttp3.Response;
  */
 public class SharePlaylistUtils {
     private static final String TAG = "SharePlaylistUtils";
-    private static final String SERVER_URL = BASE_URL;
+    private static final String SERVER_URL = com.example.myapplication.network.ServerConfig.baseUrl().replaceAll("/$", "");
 
     /**
      * 显示歌单分享对话框
@@ -148,16 +146,18 @@ public class SharePlaylistUtils {
 
         // 上传每首歌曲
         for (int i = 0; i < songsToUpload.size(); i++) {
+            final int songIndex = i;
             Song currentSong = songsToUpload.get(i);
+
+            // 更新进度对话框
+            activity.runOnUiThread(() -> {
+                dialogMessage.setText("正在上传歌曲 (" + (songIndex + 1) + "/" + songsToUpload.size() + ")");
+            });
 
             // 使用UploadTask上传歌曲
             uploadSong(activity, currentSong, () -> {
                 int completed = uploadedCount.incrementAndGet();
                 dialogProgressBar.setProgress(completed);
-
-                // 更新进度对话框
-                activity.runOnUiThread(() -> dialogMessage.setText(String.format(Locale.getDefault(),
-                        "正在上传歌曲... (%d/%d)", completed, songsToUpload.size())));
 
                 // 当所有歌曲上传完成后，生成分享码
                 if (completed == songsToUpload.size()) {

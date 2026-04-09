@@ -74,7 +74,10 @@ public class LoginActivity extends AppCompatActivity {
                 @Override
                 public void onFailure(String error) {
                     try {
-                        Socket s = new Socket("10.0.2.2", 8080);
+                        Socket s = new Socket(com.example.myapplication.network.ServerConfig.baseUrl()
+                                .replace("http://", "")
+                                .replace("/", "")
+                                .split(":")[0], 8080);
                         Log.d("登录与注册-网络测试", "连接成功！");
                     } catch (IOException e) {
                         Log.e("登录与注册-网络测试", "连接失败：" + e.getMessage());

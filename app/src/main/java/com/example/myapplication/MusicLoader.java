@@ -17,8 +17,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 //读
 public class MusicLoader {
@@ -267,5 +269,32 @@ public class MusicLoader {
             Log.e(TAG, "解析第一首歌JSON失败", e);
             return null;
         }
+    }
+
+    public static Set<String> loadAllSongFilePaths(Context context) {
+        File musicFile = getMusicFile(context);
+        Set<String> paths = new HashSet<>();
+        if (!musicFile.exists()) {
+            return paths;
+        }
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(musicFile))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                try {
+                    JSONObject jsonObject = new JSONObject(line);
+                    String filePath = jsonObject.optString("filePath", "");
+                    if (filePath != null && !filePath.isEmpty()) {
+                        paths.add(filePath);
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "解析JSON失败: " + line, e);
+                }
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "读取歌曲列表失败: " + e.getMessage());
+        }
+
+        return paths;
     }
 }

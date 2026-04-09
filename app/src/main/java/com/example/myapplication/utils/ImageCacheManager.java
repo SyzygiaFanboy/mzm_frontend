@@ -92,6 +92,20 @@ public class ImageCacheManager {
         
         Log.d(TAG, "图片已缓存: " + url);
     }
+
+    public void remove(String url) {
+        if (url == null || url.isEmpty()) {
+            return;
+        }
+
+        String key = generateKey(url);
+        memoryCache.remove(key);
+
+        File cacheFile = new File(diskCacheDir, key + ".jpg");
+        if (cacheFile.exists()) {
+            cacheFile.delete();
+        }
+    }
     
     /**
      * 从磁盘缓存获取图片

@@ -114,8 +114,9 @@ public class MusicPlayer {
             new Thread(() -> {
                 HttpURLConnection conn = null;
                 try {
-                    String urlStr = "http://192.168.19.196:8080/play/stream?songId="
-                            + URLEncoder.encode(onlineId, "UTF-8");
+                    String urlStr = com.example.myapplication.network.ServerConfig.playStreamUrl(
+                            URLEncoder.encode(onlineId, "UTF-8")
+                    );
                     conn = (HttpURLConnection) new URL(urlStr).openConnection();
                     conn.setRequestMethod("GET");
                     conn.setConnectTimeout(3000);

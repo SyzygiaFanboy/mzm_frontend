@@ -37,40 +37,53 @@ public class BatchModeAdapter extends SimpleAdapter {
 
     public void setData(List<Map<String, Object>> newData) {
         this.data = newData;
-//        notifyDataSetChanged();
+        notifyDataSetChanged();
     }
 
     @Override
     public int getCount() {
-        return data.size();
+        return data != null ? data.size() : 0;
     }
 
     @Override
     public Object getItem(int i) {
+        if (data == null || i < 0 || i >= data.size()) {
+            return null;
+        }
         return data.get(i);
     }
 
     @Override
     public View getView(final int position, View convertView, ViewGroup parent) {
-        View view = super.getView(position, convertView, parent);
-//        CheckBox cbSelect = view.findViewById(R.id.cbSelect);
+        // 边界检查
+        if (data == null || position < 0 || position >= data.size()) {
+            // 如果位置无效，返回一个空的视图或默认视图
+            if (convertView == null) {
+                convertView = super.getView(0, null, parent);
+            }
+            return convertView;
+        }
 
+        View view = super.getView(position, convertView, parent);
         CheckBox cbItem = view.findViewById(R.id.cbSelect);
-        // 控制复选框可见性，歌单同理
+        
+        cbItem.setOnCheckedChangeListener(null);
+        
+        // 控制复选框可见性
         cbItem.setVisibility(isBatchMode ? View.VISIBLE : View.GONE);
 
         // 获取isSelected值并判null
         Boolean isSelected = (Boolean) data.get(position).get("isSelected");
-        cbItem.setChecked(isSelected != null ? isSelected : false); // 空值保护
+        cbItem.setChecked(isSelected != null ? isSelected : false);
+        
         TextView tvName = view.findViewById(R.id.musicname);
         // 批量模式时调整左边距
         if (isBatchMode) {
-//            ObjectAnimator slideIn = ObjectAnimator.ofFloat(cbItem, "translationX", -50f, 0f);
+            //            ObjectAnimator slideIn = ObjectAnimator.ofFloat(cbItem, "translationX", -50f, 0f);
 //            slideIn.setInterpolator(new OvershootInterpolator());
 //            slideIn.start();
 //            cbItem.setVisibility(View.VISIBLE);
             //动画效果，但是略丑
-
             // 保持名称与序号间距不变
             ConstraintLayout.LayoutParams params = (ConstraintLayout.LayoutParams) tvName.getLayoutParams();
             params.horizontalBias = 0f; // 左对齐
@@ -78,18 +91,29 @@ public class BatchModeAdapter extends SimpleAdapter {
         } else {
             cbItem.setVisibility(View.GONE);
         }
-        // 单项选中状态变化监听
+        
+        // 设置监听器，并添加严格的边界检查
         cbItem.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            data.get(position).put("isSelected", isChecked);
-            if (selectAllListener != null) {
-                selectAllListener.onSelectAllChanged(shouldSelectAll());
+            if (data != null && position >= 0 && position < data.size()) {
+                try {
+                    data.get(position).put("isSelected", isChecked);
+                    if (selectAllListener != null) {
+                        selectAllListener.onSelectAllChanged(shouldSelectAll());
+                    }
+                } catch (IndexOutOfBoundsException e) {
+                    android.util.Log.w("BatchModeAdapter", "Index out of bounds in checkbox listener: position=" + position + ", size=" + data.size());
+                }
             }
         });
+        
         return view;
     }
 
-    // 判断是否应该触发全选
+
     private boolean shouldSelectAll() {
+        if (data == null || data.isEmpty()) {
+            return false;
+        }
         for (Map<String, Object> item : data) {
             Boolean isSelected = (Boolean) item.get("isSelected");
             if (isSelected == null || !isSelected) {

@@ -32,6 +32,7 @@ import java.net.URLEncoder;
 import java.util.*;
 
 import java.util.ArrayList;
+import com.example.myapplication.network.ServerConfig;
 //搜索逻辑，注意搜索的xml中的输入框存在适配问题，需要修改，页面需要美化
 //同时可以取消搜索按钮，改为输入框获取内容后直接向后端提出申请
 public class SearchActivity extends AppCompatActivity {
@@ -60,6 +61,12 @@ public class SearchActivity extends AppCompatActivity {
         Button btnConfirm = findViewById(R.id.btn_confirm);
         adapter = new SongAdapter(this, songList);
         lvResults.setAdapter(adapter);
+
+        // 默认展示当前后端地址（主要用于提示），实际请求已统一走 ServerConfig
+        try {
+            String hint = ServerConfig.appBaseUrl().replace("http://", "").replaceAll("/$", "");
+            etServer.setText(hint);
+        } catch (Exception ignored) {}
 //        ImageButton btnBack = findViewById(R.id.btn_back);
 //        btnBack.setOnClickListener(v -> finish());
         Toolbar toolbar = findViewById(R.id.toolbar_search);
@@ -110,13 +117,11 @@ public class SearchActivity extends AppCompatActivity {
     }
     // SearchActivity.java
     private void addToLocalPlaylist(Songinf serverSong) throws UnsupportedEncodingException {
-        String serverAddress = etServer.getText().toString().trim();
-        // 确保路径格式正确（避免双斜杠）
-        String cleanPath = serverSong.getSongpath().startsWith("/") ?
-                serverSong.getSongpath().substring(1) :
-                serverSong.getSongpath();
-    
-        String fullPath = "http://" + serverAddress + "/" + cleanPath;
+        // 后端返回的 songpath 形如 "/song/xxx.mp3"，需要带上应用 context 才能访问到资源
+        String cleanPath = serverSong.getSongpath();
+        if (cleanPath == null) cleanPath = "";
+        if (cleanPath.startsWith("/")) cleanPath = cleanPath.substring(1);
+        String fullPath = ServerConfig.appBaseUrl() + cleanPath;
     
         // 组合歌手和歌曲名，格式："歌手 - 歌曲名"
         String musician = serverSong.getMusician();
@@ -146,11 +151,9 @@ public class SearchActivity extends AppCompatActivity {
         @Override
         protected List<Songinf> doInBackground(Void... voids) {
             try {
-                // 动态获取服务器地址，这里以后可能要修改
-                String serverAddress = "http://" + etServer.getText().toString().trim();
                 String keyword = URLEncoder.encode(etKeyword.getText().toString().trim(), "UTF-8");
-                String urlStr = serverAddress
-                        + "/jiekou?keyword="
+                String urlStr = ServerConfig.appBaseUrl()
+                        + "jiekou?keyword="
                         + keyword
                         + "&page=1"
                         + "&pageSize=50";
