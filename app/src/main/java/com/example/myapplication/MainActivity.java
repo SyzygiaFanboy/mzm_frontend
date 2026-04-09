@@ -25,6 +25,10 @@ import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.AbsListView;
+import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
+import android.util.TypedValue;
+import android.view.animation.LinearInterpolator;
 import android.widget.AdapterView;
 import android.widget.BaseAdapter;
 import android.widget.Button;
@@ -107,6 +111,24 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     private TextView preogress = null;
     private ImageView albumArt;
     private TextView playlistTitle;
+    private TextView currentSongText;
+    private View currentSongLayout;
+    private ObjectAnimator marqueeAnimator;
+    private float marqueeStartX = 0f;
+    private float marqueeEndX = 0f;
+    private String lastCurrentSongDisplayText = null;
+
+    private final MusicPlayer.OnPlaybackStateChangeListener playlistPagePlaybackListener = new MusicPlayer.OnPlaybackStateChangeListener() {
+        @Override
+        public void onPlaybackStateChanged() {
+            runOnUiThread(MainActivity.this::refreshCurrentSongBar);
+        }
+
+        @Override
+        public void onSongChanged() {
+            runOnUiThread(MainActivity.this::refreshCurrentSongBar);
+        }
+    };
     // private List<Map<String, Object>> musicList = new ArrayList<>(); //
     // 确保非空//这里因为listitem是私有变量，得先创建个全局的先，，，
     private SeekBar progressBar = null;
@@ -196,6 +218,14 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         setContentView(R.layout.activity_main);
 
         playlistTitle = findViewById(R.id.playlistTitle);
+        currentSongText = findViewById(R.id.currentSong);
+        currentSongLayout = findViewById(R.id.currentSongLayout);
+
+        if (currentSongLayout != null) {
+            currentSongLayout.setOnClickListener(v -> toggleMarquee());
+        } else if (currentSongText != null) {
+            currentSongText.setOnClickListener(v -> toggleMarquee());
+        }
 
         // 获取全局MusicPlayer实例
         musicPlayer = ((MyApp) getApplication()).getMusicPlayer();
@@ -266,6 +296,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
         // 加载歌单但不影响播放状态
         loadMusicList(listview, currentPlaylist);
+
+        refreshCurrentSongBar();
         refreshHeaderCover();
 
         RadioGroup radioGroup = findViewById(R.id.radiogroup);
@@ -1385,6 +1417,9 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     @Override
     protected void onPause() {
         super.onPause();
+        if (musicPlayer != null) {
+            musicPlayer.removeOnPlaybackStateChangeListener(playlistPagePlaybackListener);
+        }
         // 暂停时不关闭进度对话框，但记录状态
     }
 
@@ -1412,15 +1447,145 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             musicPlayer.setQueueContext(currentPlaylist, pos);
             if (listview != null) {
                 listview.setItemChecked(pos, true);
-                listview.smoothScrollToPosition(pos);
             }
         }
+
+        musicPlayer.addOnPlaybackStateChangeListener(playlistPagePlaybackListener);
+        refreshCurrentSongBar();
 
         // 强制刷新底部播放栏状态
         GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
         globalManager.attachToActivity(this);
         globalManager.forceRefresh();
         // 恢复时检查进度对话框状态
+    }
+
+    private void refreshCurrentSongBar() {
+        if (currentSongText == null) {
+            currentSongText = findViewById(R.id.currentSong);
+        }
+
+        Song current = musicPlayer != null ? musicPlayer.getCurrentSong() : null;
+        if (currentSongText != null) {
+            String displayText;
+            if (current == null || current.getName() == null || current.getName().isEmpty() || "暂无歌曲".equals(current.getName())) {
+                displayText = "当前播放：暂无歌曲";
+            } else {
+                displayText = "当前播放：" + current.getName();
+            }
+
+            if (lastCurrentSongDisplayText == null || !lastCurrentSongDisplayText.equals(displayText)) {
+                lastCurrentSongDisplayText = displayText;
+                currentSongText.setText(displayText);
+                stopMarquee();
+            }
+        }
+
+        int pos = getCurrentSongPosition();
+        if (pos >= 0 && listview != null && pos < musicList.size()) {
+            selectedPosition = pos;
+            listview.setItemChecked(pos, true);
+        }
+    }
+
+    private void toggleMarquee() {
+        if (currentSongText == null) {
+            currentSongText = findViewById(R.id.currentSong);
+        }
+        if (currentSongText == null) {
+            return;
+        }
+
+        if (marqueeAnimator == null) {
+            startMarqueeIfNeeded();
+            return;
+        }
+
+        if (marqueeAnimator.isPaused()) {
+            marqueeAnimator.resume();
+        } else if (marqueeAnimator.isRunning()) {
+            marqueeAnimator.pause();
+        } else {
+            startMarqueeIfNeeded();
+        }
+    }
+
+    private void startMarqueeIfNeeded() {
+        if (currentSongText == null) {
+            return;
+        }
+        currentSongText.post(() -> {
+            if (currentSongText == null) {
+                return;
+            }
+            float textWidth = currentSongText.getPaint().measureText(String.valueOf(currentSongText.getText()));
+            int containerWidth = currentSongText.getWidth();
+            if (containerWidth <= 0 || textWidth <= containerWidth) {
+                stopMarquee();
+                return;
+            }
+
+            float extraGap = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 40, getResources().getDisplayMetrics());
+            marqueeStartX = 0f;
+            marqueeEndX = -(textWidth - containerWidth + extraGap);
+
+            long duration = (long) (Math.abs(marqueeEndX - marqueeStartX) * 12);
+            duration = Math.max(2500L, Math.min(duration, 20000L));
+
+            stopMarquee();
+            marqueeAnimator = ObjectAnimator.ofFloat(currentSongText, "translationX", marqueeStartX, marqueeEndX);
+            marqueeAnimator.setDuration(duration);
+            marqueeAnimator.setInterpolator(new LinearInterpolator());
+            marqueeAnimator.setRepeatCount(ValueAnimator.INFINITE);
+            marqueeAnimator.setRepeatMode(ValueAnimator.RESTART);
+            marqueeAnimator.start();
+        });
+    }
+
+    private void stopMarquee() {
+        if (marqueeAnimator != null) {
+            try {
+                marqueeAnimator.cancel();
+            } catch (Exception ignored) {
+            }
+            marqueeAnimator = null;
+        }
+        if (currentSongText != null) {
+            currentSongText.setTranslationX(0f);
+        }
+    }
+
+    private void togglePlayPauseFromBar() {
+        Song current = musicPlayer != null ? musicPlayer.getCurrentSong() : null;
+        if (current == null || current.getName() == null || current.getName().isEmpty() || "暂无歌曲".equals(current.getName())) {
+            if (selectedPosition >= 0 && selectedPosition < musicList.size()) {
+                try {
+                    playSongAt(selectedPosition);
+                } catch (IOException e) {
+                    Toast.makeText(this, "播放失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                }
+            } else {
+                Toast.makeText(this, "暂无歌曲", Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+
+        if (musicPlayer.isPlaying()) {
+            switchPlayStatus(PlayerStatus.PAUSED);
+        } else if (musicPlayer.isPaused()) {
+            switchPlayStatus(PlayerStatus.PLAYING);
+        } else {
+            if (selectedPosition >= 0 && selectedPosition < musicList.size()) {
+                try {
+                    playSongAt(selectedPosition);
+                } catch (IOException e) {
+                    Toast.makeText(this, "播放失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                }
+            }
+        }
+        updateAllPlayButtons();
+        GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
+        globalManager.forceRefresh();
     }
 
     @Override
@@ -3336,88 +3501,29 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 return; // 防止快速点击
             }
             lastClickTime = currentTime;
-            if (progressSyncThread != null && progressSyncThread.isAlive()) {
-                isProgressSyncRunning = false;
-                progressSyncThread.interrupt(); // 强制中断线程
+            if (isBatchMode) {
+                Map<String, Object> item = (Map<String, Object>) parent.getAdapter().getItem(position);
+                if (item == null) {
+                    return;
+                }
+                boolean newSelected = !Boolean.TRUE.equals(item.get("isSelected"));
+                item.put("isSelected", newSelected);
+                if (newSelected) {
+                    if (!selectedPositions.contains(position)) {
+                        selectedPositions.add(position);
+                    }
+                } else {
+                    selectedPositions.remove((Integer) position);
+                }
+                ((BaseAdapter) parent.getAdapter()).notifyDataSetChanged();
+                return;
             }
-            ListView lv = (ListView) parent;
-            Map<String, Object> map = (Map<String, Object>) lv.getAdapter().getItem(position);
-            selectSong = Song.fromMap(map);
+
             selectedPosition = position;
-
-            if (!selectSong.equals(song)) {// !selectSong.getName().equals(song.getName())
-                try {
-                    // musicPlayer.loadMusic(selectSong);
-                    playSongAt(position);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-                song = selectSong;
-                TextView currentSongTV = findViewById(R.id.currentSong);
-                // 更新 UI
-                currentSongTV.setText(selectSong.getName());
-                playBtn.setEnabled(true);
-                musicPlayer.setCurrentPositiontozero();
-
-                isResettingProgress = true;
-                // 重新设置进度条最大值和归零
-                progressBar.setMax(selectSong.getTimeDuration());
-                progressBar.setProgress(0);// 进度条归零
-                // 更新进度文本
-                preogress.setText("0");
-                playBtn.setText("暂停");
-                isResettingProgress = false;
-                updateAllPlayButtons();
-
-                // // 添加延迟强制刷新
-                // new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                //     GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
-                //     globalManager.forceRefresh();
-                // }, 200);
-
-
-            } else {
-                if (musicPlayer.isPlaying()) {
-                    switchPlayStatus(PlayerStatus.PAUSED);
-                    playBtn.setText("播放");
-                } else if (musicPlayer.isPaused()) {
-                    switchPlayStatus(PlayerStatus.PLAYING);
-                    playBtn.setText("暂停");
-                } else {
-                    try {
-                        playSongAt(position);
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-                updateAllPlayButtons();
-
-                // 同样添加延迟强制刷新
-                new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                    GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
-                    globalManager.forceRefresh();
-                }, 200);
-
-            }
-            // song = selectSong;
-            boolean isCurrentSong = selectSong.equals(song);
-            if (!isCurrentSong) {
-                ((BaseAdapter) lv.getAdapter()).notifyDataSetChanged();
-                RadioGroup radioGroup = findViewById(R.id.radiogroup);
-                if (radioGroup.getCheckedRadioButtonId() != R.id.shuffled) {
-                    if (position <= lv.getChildCount() - 2) {
-                        listview.setSelection(0);
-                    } else if (position - lv.getFirstVisiblePosition() <= 0) {
-                        listview.setSelection(position - (lv.getChildCount() - 2));
-                    }
-                    // else if(position-lv.getFirstVisiblePosition() <= 0){
-                    // listview.setSelection(position);
-                    // }
-                } else {
-                    listview.setSelection(position);
-                }
-                playBtn.setText("暂停");
-                new Thread(new ProgressSync()).start();
+            try {
+                playSongAt(position);
+            } catch (IOException e) {
+                Toast.makeText(MainActivity.this, "播放失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
             }
         }
 
