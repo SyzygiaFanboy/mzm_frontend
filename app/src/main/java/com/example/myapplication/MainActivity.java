@@ -262,6 +262,27 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         // 加载歌单但不影响播放状态
         loadMusicList(listview, currentPlaylist);
 
+        RadioGroup radioGroup = findViewById(R.id.radiogroup);
+        if (radioGroup != null) {
+            MusicPlayer.PlayMode mode = musicPlayer.getPlayMode();
+            if (mode == MusicPlayer.PlayMode.SHUFFLE) {
+                radioGroup.check(R.id.shuffled);
+            } else if (mode == MusicPlayer.PlayMode.SINGLE_LOOP) {
+                radioGroup.check(R.id.singleendless);
+            } else {
+                radioGroup.check(R.id.sequential);
+            }
+            radioGroup.setOnCheckedChangeListener((group, checkedId) -> {
+                if (checkedId == R.id.shuffled) {
+                    musicPlayer.setPlayMode(MusicPlayer.PlayMode.SHUFFLE);
+                } else if (checkedId == R.id.singleendless) {
+                    musicPlayer.setPlayMode(MusicPlayer.PlayMode.SINGLE_LOOP);
+                } else {
+                    musicPlayer.setPlayMode(MusicPlayer.PlayMode.SEQUENTIAL);
+                }
+            });
+        }
+
         new Thread(() -> {
             try {
                 java.util.Set<String> keep = MusicLoader.loadAllSongFilePaths(MainActivity.this);
@@ -431,10 +452,25 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     .setPositiveButton("确定", (dialog, which) -> {
                         boolean shouldDeleteFiles = cbDeleteFile.isChecked();
 
+                        java.util.HashMap<String, Integer> deleteCounts = new java.util.HashMap<>();
+                        for (Song s : songsToDelete) {
+                            String fp = s.getFilePath();
+                            deleteCounts.put(fp, deleteCounts.getOrDefault(fp, 0) + 1);
+                        }
+                        java.util.HashSet<String> processedPaths = new java.util.HashSet<>();
+
                         for (Song s : songsToDelete) {
                             SongDeletionUtils.deleteCoverCaches(MainActivity.this, s.getName(), s.getCoverUrl());
                             if (shouldDeleteFiles) {
-                                SongDeletionUtils.deleteAppOwnedAudioFile(MainActivity.this, s.getFilePath());
+                                String fp = s.getFilePath();
+                                if (!processedPaths.contains(fp)) {
+                                    processedPaths.add(fp);
+                                    int refs = MusicLoader.countFilePathReferences(MainActivity.this, fp);
+                                    int delCount = deleteCounts.getOrDefault(fp, 1);
+                                    if (refs <= delCount) {
+                                        SongDeletionUtils.deleteAppOwnedAudioFile(MainActivity.this, fp);
+                                    }
+                                }
                             }
                         }
 
@@ -806,6 +842,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         Log.d("MainActivity", "收到播放完成回调");
         runOnUiThread(() -> {
             try {
+                if (musicPlayer.isSongChanging()) {
+                    return;
+                }
+                if (isSongChanging) {
+                    return;
+                }
                 if (!musicList.isEmpty()) {
                     playNextSong();
                     new Handler().postDelayed(() -> {
@@ -978,21 +1020,23 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         // 重置自动触发标志
         isAutoNextTriggered = false;
 
-        // 计算下一首的位置
-        RadioGroup radioGroup = findViewById(R.id.radiogroup);
-        int checkedId = radioGroup.getCheckedRadioButtonId();
         int newPosition;
-
-        if (checkedId == R.id.shuffled) {
+        int basePos = musicPlayer.getQueueIndex();
+        if (basePos < 0 || basePos >= musicList.size()) {
+            basePos = selectedPosition;
+        }
+        MusicPlayer.PlayMode mode = musicPlayer.getPlayMode();
+        if (mode == MusicPlayer.PlayMode.SHUFFLE) {
             newPosition = new Random().nextInt(musicList.size());
-        } else if (checkedId == R.id.singleendless) {
-            newPosition = selectedPosition;
+        } else if (mode == MusicPlayer.PlayMode.SINGLE_LOOP) {
+            newPosition = basePos;
         } else {
-            newPosition = (selectedPosition + 1) % musicList.size();
+            newPosition = (basePos + 1) % musicList.size();
         }
 
         // 播放新歌曲
         selectedPosition = newPosition;
+        musicPlayer.setQueueContext(currentPlaylist, selectedPosition);
         playSongAt(selectedPosition);
         updateAllPlayButtons();
     }
@@ -1169,13 +1213,13 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     // 这个函数可能会用到，别删
     public void refreshPlaylist() {
         // 重新从文件加载最新数据
-        musicList = MusicLoader.loadSongs(listview.getContext(), currentPlaylist);
+        List<Map<String, Object>> loaded = MusicLoader.loadSongs(listview.getContext(), currentPlaylist);
+        musicList.clear();
+        musicList.addAll(loaded);
         // 确保适配器更新
         if (listview != null) {
             BatchModeAdapter adapter = (BatchModeAdapter) listview.getAdapter();
-            listview.setAdapter(adapter);
             if (adapter != null) {
-                adapter.setData(musicList); // 更新适配器数据源
                 adapter.notifyDataSetChanged(); // 直接通知适配器更新
             } else {
                 // 重新初始化适配器
@@ -1337,6 +1381,28 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         super.onResume();
         // 每次返回时重新应用背景，以防用户更改了设置
         applyPlaybackBackground();
+
+        RadioGroup radioGroup = findViewById(R.id.radiogroup);
+        if (radioGroup != null) {
+            MusicPlayer.PlayMode mode = musicPlayer.getPlayMode();
+            if (mode == MusicPlayer.PlayMode.SHUFFLE) {
+                radioGroup.check(R.id.shuffled);
+            } else if (mode == MusicPlayer.PlayMode.SINGLE_LOOP) {
+                radioGroup.check(R.id.singleendless);
+            } else {
+                radioGroup.check(R.id.sequential);
+            }
+        }
+
+        int pos = getCurrentSongPosition();
+        if (pos >= 0 && pos < musicList.size()) {
+            selectedPosition = pos;
+            musicPlayer.setQueueContext(currentPlaylist, pos);
+            if (listview != null) {
+                listview.setItemChecked(pos, true);
+                listview.smoothScrollToPosition(pos);
+            }
+        }
 
         // 强制刷新底部播放栏状态
         GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
@@ -1641,20 +1707,19 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             // 添加全部歌曲到列表和持久化存储，更新UI
             runOnUiThread(() -> {
                 if (!newSongs.isEmpty()) {
+                    int firstVisiblePosBefore = listview != null ? listview.getFirstVisiblePosition() : -1;
+                    int firstChildTopBefore = 0;
+                    if (listview != null && listview.getChildCount() > 0 && listview.getChildAt(0) != null) {
+                        firstChildTopBefore = listview.getChildAt(0).getTop();
+                    }
+
                     for (Song song : newSongs) {
                         MusicLoader.appendMusic(this, song);
                         addSongToPlaylist(song);
                     }
 
-                    // 更新高亮音乐位置
-                    int pos = selectedPosition;
-                    if (pos >= 0) {
-                        selectedPosition = pos + newSongs.size();
-                    }
-
                     BatchModeAdapter adapter = (BatchModeAdapter) listview.getAdapter();
                     if (adapter != null) {
-                        adapter.setData(musicList);
                         updateSongIndices();
                         adapter.notifyDataSetChanged();
                     } else {
@@ -1664,6 +1729,17 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     if (!musicList.isEmpty()) {
                         btnNext.setEnabled(true);
                         btnPrevious.setEnabled(true);
+                    }
+
+                    int playingPos = getCurrentSongPosition();
+                    if (playingPos >= 0 && playingPos < musicList.size()) {
+                        selectedPosition = playingPos;
+                        musicPlayer.setQueueContext(currentPlaylist, playingPos);
+                        listview.setItemChecked(playingPos, true);
+                    }
+
+                    if (firstVisiblePosBefore == 0 && firstChildTopBefore == 0) {
+                        listview.setSelection(0);
                     }
                     updatePlaylistCover(currentPlaylist);
                 }
@@ -1792,7 +1868,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         Song songToDelete = Song.fromMap(musicList.get(position));
         SongDeletionUtils.deleteCoverCaches(this, songToDelete.getName(), songToDelete.getCoverUrl());
         if (deleteLocalFile) {
-            SongDeletionUtils.deleteAppOwnedAudioFile(this, songToDelete.getFilePath());
+            int refs = MusicLoader.countFilePathReferences(this, songToDelete.getFilePath());
+            if (refs <= 1) {
+                SongDeletionUtils.deleteAppOwnedAudioFile(this, songToDelete.getFilePath());
+            } else {
+                Toast.makeText(this, "该歌曲文件还被其他歌单引用，已仅从当前歌单移除", Toast.LENGTH_SHORT).show();
+            }
         }
 
         Song currentSong = musicPlayer.getCurrentSong();
@@ -1953,7 +2034,9 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         boolean wasPaused = musicPlayer.isPaused();
 
         // 加载新歌单的歌曲列表
-        musicList = MusicLoader.loadSongs(this, playlist);
+        List<Map<String, Object>> loaded = MusicLoader.loadSongs(this, playlist);
+        musicList.clear();
+        musicList.addAll(loaded);
         for (Map<String, Object> item : musicList) {
             item.put("isSelected", false);
         }
@@ -2034,6 +2117,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         // 获取歌曲对象
         Map<String, Object> songMap = musicList.get(index);
         Song songToPlay = Song.fromMap(songMap);
+        musicPlayer.setQueueContext(currentPlaylist, index);
 
         if (!isFileValid(songToPlay.getFilePath())) {
             runOnUiThread(() -> {
@@ -2096,8 +2180,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     // 下面的上一首按钮与下一首按钮将来有可能调整UI的时候会删除
     public void next(View view) throws IOException {
         isAutoNextTriggered = true;
-        RadioGroup radioGroup = findViewById(R.id.radiogroup);
-        int checkedId = radioGroup.getCheckedRadioButtonId();
         int nextPos;
 
         if (musicList.isEmpty()) {
@@ -2105,15 +2187,22 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             return;
         }
 
-        if (checkedId == R.id.singleendless) {
-            nextPos = selectedPosition;
-        } else if (checkedId == R.id.shuffled) {
+        int basePos = musicPlayer.getQueueIndex();
+        if (basePos < 0 || basePos >= musicList.size()) {
+            basePos = selectedPosition;
+        }
+
+        MusicPlayer.PlayMode mode = musicPlayer.getPlayMode();
+        if (mode == MusicPlayer.PlayMode.SINGLE_LOOP) {
+            nextPos = basePos;
+        } else if (mode == MusicPlayer.PlayMode.SHUFFLE) {
             nextPos = new Random().nextInt(musicList.size());
         } else {
-            nextPos = (selectedPosition + 1) % musicList.size();
+            nextPos = (basePos + 1) % musicList.size();
         }
 
         selectedPosition = nextPos;
+        musicPlayer.setQueueContext(currentPlaylist, selectedPosition);
         Map<String, Object> map = musicList.get(nextPos);
         selectSong = Song.fromMap(map);
 
@@ -2145,8 +2234,10 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     // 上一首按钮处理逻辑
     public void previous(View view) throws IOException {
         isAutoNextTriggered = true;
-        RadioGroup radioGroup = findViewById(R.id.radiogroup);
-        int currentPos = selectedPosition;
+        int currentPos = musicPlayer.getQueueIndex();
+        if (currentPos < 0 || currentPos >= musicList.size()) {
+            currentPos = selectedPosition;
+        }
         int prePos;
 
         if (musicList.isEmpty()) {
@@ -2154,16 +2245,17 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             return;
         }
 
-        int checkedId = radioGroup.getCheckedRadioButtonId();
-        if (checkedId == R.id.singleendless) {
+        MusicPlayer.PlayMode mode = musicPlayer.getPlayMode();
+        if (mode == MusicPlayer.PlayMode.SINGLE_LOOP) {
             prePos = currentPos;
-        } else if (checkedId == R.id.shuffled) {
+        } else if (mode == MusicPlayer.PlayMode.SHUFFLE) {
             prePos = new Random().nextInt(musicList.size());
         } else {
             prePos = currentPos == 0 ? musicList.size() - 1 : currentPos - 1;
         }
 
         selectedPosition = prePos;
+        musicPlayer.setQueueContext(currentPlaylist, selectedPosition);
         Map<String, Object> map = musicList.get(prePos);
         selectSong = Song.fromMap(map);
 

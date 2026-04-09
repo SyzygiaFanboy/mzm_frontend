@@ -149,11 +149,21 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
     
         String coverPath = playlist.getLatestCoverPath();
         if (coverPath != null && !coverPath.isEmpty()) {
-            Bitmap coverBitmap = MusicCoverUtils.getCoverFromFile(coverPath, context);
-            if (coverBitmap != null) {
-                holder.ivCover.setImageBitmap(coverBitmap);
+            if ((coverPath.startsWith("http://") || coverPath.startsWith("https://"))
+                    && (coverPath.endsWith(".jpg") || coverPath.endsWith(".jpeg") || coverPath.endsWith(".png") || coverPath.contains(".jpg") || coverPath.contains(".jpeg") || coverPath.contains(".png"))) {
+                holder.ivCover.setImageResource(playlist.getCoverRes());
+                MusicCoverUtils.loadCoverFromUrl(coverPath, context, holder.ivCover);
+            } else if (coverPath.startsWith("http://") || coverPath.startsWith("https://")) {
+                holder.ivCover.setImageResource(playlist.getCoverRes());
+                MusicCoverUtils.loadCoverSmart(coverPath, "", context, holder.ivCover);
             } else {
                 holder.ivCover.setImageResource(playlist.getCoverRes());
+                new Thread(() -> {
+                    Bitmap coverBitmap = MusicCoverUtils.getCoverFromFile(coverPath, context);
+                    if (coverBitmap != null) {
+                        ((android.app.Activity) context).runOnUiThread(() -> holder.ivCover.setImageBitmap(coverBitmap));
+                    }
+                }).start();
             }
         } else {
             holder.ivCover.setImageResource(playlist.getCoverRes());

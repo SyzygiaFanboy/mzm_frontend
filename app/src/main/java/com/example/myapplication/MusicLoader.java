@@ -1,6 +1,7 @@
 package com.example.myapplication;
 
 import android.content.Context;
+import android.net.Uri;
 import android.os.Build;
 import android.util.Log;
 
@@ -46,7 +47,7 @@ public class MusicLoader {
     public static List<Map<String, Object>> loadSongs(Context context, String targetPlaylist) {
         File musicFile = getMusicFile(context);
         List<Map<String, Object>> list = new ArrayList<>();
-        List<String> validLines = new ArrayList<>();
+        List<String> keptLines = new ArrayList<>();
         boolean needCleanup = false;
 
         try (BufferedReader reader = new BufferedReader(new FileReader(musicFile))) {
@@ -55,8 +56,15 @@ public class MusicLoader {
             while ((line = reader.readLine()) != null) {
                 try {
                     JSONObject jsonObject = new JSONObject(line);
-                    validLines.add(line);
                     String playlist = jsonObject.getString("playlist");
+                    String uriString = jsonObject.getString("filePath");
+
+                    if (shouldDropMissingAppOwnedFile(context, uriString)) {
+                        needCleanup = true;
+                        continue;
+                    }
+
+                    keptLines.add(line);
 
                     // 检查是否是目标歌单
                     if (!playlist.equals(targetPlaylist)) {
@@ -65,7 +73,6 @@ public class MusicLoader {
 
                     int duration = jsonObject.getInt("duration");
                     String name = jsonObject.getString("name");
-                    String uriString = jsonObject.getString("filePath");
                     String coverUrl = jsonObject.optString("coverUrl", "");
                     String onlineSongId = jsonObject.optString("onlineSongId", "");
 
@@ -85,8 +92,8 @@ public class MusicLoader {
         // 如果发现了无效行，删除它们
         if (needCleanup) {
             try (BufferedWriter writer = new BufferedWriter(new FileWriter(musicFile, false))) {
-                for (String validLine : validLines) {
-                    writer.write(validLine);
+                for (String keptLine : keptLines) {
+                    writer.write(keptLine);
                     writer.newLine();
                 }
             } catch (IOException e) {
@@ -95,6 +102,116 @@ public class MusicLoader {
         }
 
         return list;
+    }
+
+    public static int countFilePathReferences(Context context, String filePath) {
+        String key = normalizeToPathKey(filePath);
+        if (key == null) {
+            return 0;
+        }
+        File musicFile = getMusicFile(context);
+        if (!musicFile.exists()) {
+            return 0;
+        }
+
+        int count = 0;
+        try (BufferedReader reader = new BufferedReader(new FileReader(musicFile))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                try {
+                    JSONObject jsonObject = new JSONObject(line);
+                    String fp = jsonObject.optString("filePath", "");
+                    String otherKey = normalizeToPathKey(fp);
+                    if (key.equals(otherKey)) {
+                        count++;
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "统计filePath引用失败: " + e.getMessage());
+        }
+        return count;
+    }
+
+    private static boolean shouldDropMissingAppOwnedFile(Context context, String filePath) {
+        String key = normalizeToPathKey(filePath);
+        if (key == null) {
+            return false;
+        }
+
+        if (filePath.startsWith("http")) {
+            return false;
+        }
+        if (filePath.startsWith("content://")) {
+            return false;
+        }
+
+        File f = new File(key);
+        if (f.exists()) {
+            return false;
+        }
+        return isUnderAppOwnedRoots(context, f);
+    }
+
+    private static boolean isUnderAppOwnedRoots(Context context, File target) {
+        try {
+            String targetPath = target.getCanonicalPath();
+            for (File root : getAppOwnedRoots(context)) {
+                if (root == null) continue;
+                String rootPath = root.getCanonicalPath();
+                if (targetPath.equals(rootPath)) return true;
+                if (targetPath.startsWith(rootPath + File.separator)) return true;
+            }
+        } catch (IOException ignored) {
+        }
+        return false;
+    }
+
+    private static List<File> getAppOwnedRoots(Context context) {
+        List<File> roots = new ArrayList<>();
+        roots.add(context.getFilesDir());
+        roots.add(new File(context.getFilesDir(), "music"));
+
+        File externalRoot = context.getExternalFilesDir(null);
+        if (externalRoot != null) roots.add(externalRoot);
+
+        File audioDir = context.getExternalFilesDir("audio");
+        if (audioDir != null) roots.add(audioDir);
+
+        File musicDir = context.getExternalFilesDir("music");
+        if (musicDir != null) {
+            roots.add(musicDir);
+            roots.add(new File(musicDir, "shared"));
+        }
+        return roots;
+    }
+
+    private static String normalizeToPathKey(String filePath) {
+        if (filePath == null || filePath.isEmpty()) {
+            return null;
+        }
+
+        Uri uri;
+        try {
+            uri = Uri.parse(filePath);
+        } catch (Exception e) {
+            uri = null;
+        }
+
+        String scheme = uri != null ? uri.getScheme() : null;
+        if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme) || "content".equalsIgnoreCase(scheme)) {
+            return filePath;
+        }
+
+        if ("file".equalsIgnoreCase(scheme) && uri != null) {
+            String p = uri.getPath();
+            if (p != null && !p.isEmpty()) {
+                return p;
+            }
+        }
+
+        return filePath;
     }
 
     /**

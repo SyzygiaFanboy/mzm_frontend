@@ -14,6 +14,7 @@ import com.example.myapplication.utils.ImageCacheManager;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashMap;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -24,12 +25,24 @@ import okhttp3.Response;
 public class MusicCoverUtils {
     private static final String TAG = "MusicCoverUtils";
 
+    public interface CoverLoadCallback {
+        void onCoverLoaded(Bitmap bitmap);
+    }
+
     /**
      * 从音频文件获取嵌入的封面
      */
     public static Bitmap getCoverFromFile(String filePath, Context context) {
+        if (filePath == null || filePath.isEmpty()) {
+            return null;
+        }
+
+        if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
+            return null;
+        }
+
         // 如果是图片文件，直接加载
-        if (filePath != null && (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg") || filePath.endsWith(".png"))) {
+        if (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg") || filePath.endsWith(".png")) {
             try {
                 File imageFile = new File(filePath);
                 if (imageFile.exists()) {
@@ -72,6 +85,10 @@ public class MusicCoverUtils {
      * 从URL加载封面图片（带缓存）
      */
     public static void loadCoverFromUrl(String coverUrl, Context context, ImageView imageView) {
+        loadCoverFromUrl(coverUrl, context, imageView, null);
+    }
+
+    public static void loadCoverFromUrl(String coverUrl, Context context, ImageView imageView, CoverLoadCallback callback) {
         if (coverUrl == null || coverUrl.isEmpty()) {
             imageView.setImageResource(R.drawable.default_cover);
             return;
@@ -83,6 +100,9 @@ public class MusicCoverUtils {
         Bitmap cachedBitmap = cacheManager.getBitmap(coverUrl);
         if (cachedBitmap != null) {
             imageView.setImageBitmap(cachedBitmap);
+            if (callback != null) {
+                callback.onCoverLoaded(cachedBitmap);
+            }
             return;
         }
 
@@ -109,6 +129,10 @@ public class MusicCoverUtils {
                         ((Activity) context).runOnUiThread(() -> {
                             imageView.setImageBitmap(bitmap);
                         });
+
+                        if (callback != null) {
+                            callback.onCoverLoaded(bitmap);
+                        }
                     } else {
                         ((Activity) context).runOnUiThread(() -> {
                             imageView.setImageResource(R.drawable.default_cover);
@@ -133,6 +157,10 @@ public class MusicCoverUtils {
      * 智能加载封面：优先从文件嵌入的封面加载，如果没有则从URL加载
      */
     public static void loadCoverSmart(String musicFilePath, String coverUrl, Context context, ImageView imageView) {
+        loadCoverSmart(musicFilePath, coverUrl, context, imageView, null);
+    }
+
+    public static void loadCoverSmart(String musicFilePath, String coverUrl, Context context, ImageView imageView, CoverLoadCallback callback) {
         new Thread(() -> {
             // 首先尝试从音频文件中获取嵌入的封面
             Bitmap coverBitmap = getCoverFromFile(musicFilePath, context);
@@ -142,13 +170,61 @@ public class MusicCoverUtils {
                 ((Activity) context).runOnUiThread(() -> {
                     imageView.setImageBitmap(coverBitmap);
                 });
+                if (callback != null) {
+                    callback.onCoverLoaded(coverBitmap);
+                }
             } else {
+                if (musicFilePath != null
+                        && (musicFilePath.startsWith("http://") || musicFilePath.startsWith("https://"))
+                        && (coverUrl == null || coverUrl.isEmpty() || "null".equalsIgnoreCase(coverUrl))) {
+                    Bitmap netCover = getCoverFromNetworkAudio(musicFilePath, context);
+                    if (netCover != null) {
+                        ((Activity) context).runOnUiThread(() -> imageView.setImageBitmap(netCover));
+                        if (callback != null) {
+                            callback.onCoverLoaded(netCover);
+                        }
+                        return;
+                    }
+                }
                 // 如果音频文件中没有封面，从URL加载
                 ((Activity) context).runOnUiThread(() -> {
-                    loadCoverFromUrl(coverUrl, context, imageView);
+                    loadCoverFromUrl(coverUrl, context, imageView, callback);
                 });
             }
         }).start();
+    }
+
+    private static Bitmap getCoverFromNetworkAudio(String url, Context context) {
+        if (url == null || url.isEmpty()) {
+            return null;
+        }
+
+        ImageCacheManager cacheManager = ImageCacheManager.getInstance(context);
+        Bitmap cachedBitmap = cacheManager.getBitmap(url);
+        if (cachedBitmap != null) {
+            return cachedBitmap;
+        }
+
+        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+        try {
+            retriever.setDataSource(url, new HashMap<>());
+            byte[] coverBytes = retriever.getEmbeddedPicture();
+            if (coverBytes != null) {
+                Bitmap bitmap = BitmapFactory.decodeByteArray(coverBytes, 0, coverBytes.length);
+                if (bitmap != null) {
+                    cacheManager.putBitmap(url, bitmap);
+                }
+                return bitmap;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "在线音频提取封面失败: " + e.getMessage());
+        } finally {
+            try {
+                retriever.release();
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
     }
 
     public static String downloadAndCacheCover(String coverUrl, Context context) {

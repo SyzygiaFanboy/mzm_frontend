@@ -58,6 +58,10 @@
             android:theme="@style/AppTheme"
             android:exported="true"/>
         <activity
+            android:name=".MusicDetailActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme" />
+        <activity
             android:name=".UploadActivity"
             android:exported="false"
             android:parentActivityName=".PlaylistListActivity">

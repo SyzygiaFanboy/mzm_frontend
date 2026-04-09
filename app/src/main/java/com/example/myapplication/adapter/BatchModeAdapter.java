@@ -1,10 +1,10 @@
 package com.example.myapplication.adapter;
 
 import android.content.Context;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.CheckBox;
-import android.widget.SimpleAdapter;
 import android.widget.TextView;
 
 import androidx.constraintlayout.widget.ConstraintLayout;
@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 //复选模式适配器
-public class BatchModeAdapter extends SimpleAdapter {
+public class BatchModeAdapter extends android.widget.BaseAdapter {
 
     public interface OnSelectAllListener {
         void onSelectAllChanged(boolean shouldSelectAll);
@@ -24,6 +24,7 @@ public class BatchModeAdapter extends SimpleAdapter {
     private OnSelectAllListener selectAllListener;
     private List<Map<String, Object>> data;
     private boolean isBatchMode;
+    private final LayoutInflater inflater;
 
     // 监听器的方法
     public void setOnSelectAllListener(OnSelectAllListener listener) {
@@ -31,8 +32,8 @@ public class BatchModeAdapter extends SimpleAdapter {
     }
 
     public BatchModeAdapter(Context context, List<Map<String, Object>> data, int resource, String[] from, int[] to) {
-        super(context, data, resource, from, to);
         this.data = data;
+        this.inflater = LayoutInflater.from(context);
     }
 
     public void setData(List<Map<String, Object>> newData) {
@@ -54,59 +55,60 @@ public class BatchModeAdapter extends SimpleAdapter {
     }
 
     @Override
+    public long getItemId(int position) {
+        return position;
+    }
+
+    @Override
     public View getView(final int position, View convertView, ViewGroup parent) {
-        // 边界检查
         if (data == null || position < 0 || position >= data.size()) {
-            // 如果位置无效，返回一个空的视图或默认视图
-            if (convertView == null) {
-                convertView = super.getView(0, null, parent);
+            if (convertView != null) {
+                return convertView;
             }
-            return convertView;
+            return inflater.inflate(R.layout.playlist_layout, parent, false);
         }
 
-        View view = super.getView(position, convertView, parent);
-        CheckBox cbItem = view.findViewById(R.id.cbSelect);
-        
-        cbItem.setOnCheckedChangeListener(null);
-        
-        // 控制复选框可见性
-        cbItem.setVisibility(isBatchMode ? View.VISIBLE : View.GONE);
-
-        // 获取isSelected值并判null
-        Boolean isSelected = (Boolean) data.get(position).get("isSelected");
-        cbItem.setChecked(isSelected != null ? isSelected : false);
-        
-        TextView tvName = view.findViewById(R.id.musicname);
-        // 批量模式时调整左边距
-        if (isBatchMode) {
-            //            ObjectAnimator slideIn = ObjectAnimator.ofFloat(cbItem, "translationX", -50f, 0f);
-//            slideIn.setInterpolator(new OvershootInterpolator());
-//            slideIn.start();
-//            cbItem.setVisibility(View.VISIBLE);
-            //动画效果，但是略丑
-            // 保持名称与序号间距不变
-            ConstraintLayout.LayoutParams params = (ConstraintLayout.LayoutParams) tvName.getLayoutParams();
-            params.horizontalBias = 0f; // 左对齐
-            tvName.setLayoutParams(params);
+        ViewHolder holder;
+        if (convertView == null) {
+            convertView = inflater.inflate(R.layout.playlist_layout, parent, false);
+            holder = new ViewHolder(convertView);
+            convertView.setTag(holder);
         } else {
-            cbItem.setVisibility(View.GONE);
+            holder = (ViewHolder) convertView.getTag();
         }
-        
-        // 设置监听器，并添加严格的边界检查
-        cbItem.setOnCheckedChangeListener((buttonView, isChecked) -> {
+
+        Map<String, Object> item = data.get(position);
+
+        Object indexObj = item.get("index");
+        holder.tvSeq.setText(indexObj != null ? String.valueOf(indexObj) : String.valueOf(position + 1));
+
+        Object nameObj = item.get("name");
+        holder.tvName.setText(nameObj != null ? String.valueOf(nameObj) : "");
+
+        Object durationObj = item.get("TimeDuration");
+        holder.tvDuration.setText(durationObj != null ? String.valueOf(durationObj) : "");
+
+        holder.cbItem.setOnCheckedChangeListener(null);
+        holder.cbItem.setVisibility(isBatchMode ? View.VISIBLE : View.GONE);
+        Boolean isSelected = (Boolean) item.get("isSelected");
+        holder.cbItem.setChecked(isSelected != null && isSelected);
+
+        if (isBatchMode) {
+            ConstraintLayout.LayoutParams params = (ConstraintLayout.LayoutParams) holder.tvName.getLayoutParams();
+            params.horizontalBias = 0f;
+            holder.tvName.setLayoutParams(params);
+        }
+
+        holder.cbItem.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (data != null && position >= 0 && position < data.size()) {
-                try {
-                    data.get(position).put("isSelected", isChecked);
-                    if (selectAllListener != null) {
-                        selectAllListener.onSelectAllChanged(shouldSelectAll());
-                    }
-                } catch (IndexOutOfBoundsException e) {
-                    android.util.Log.w("BatchModeAdapter", "Index out of bounds in checkbox listener: position=" + position + ", size=" + data.size());
+                data.get(position).put("isSelected", isChecked);
+                if (selectAllListener != null) {
+                    selectAllListener.onSelectAllChanged(shouldSelectAll());
                 }
             }
         });
-        
-        return view;
+
+        return convertView;
     }
 
 
@@ -127,5 +129,19 @@ public class BatchModeAdapter extends SimpleAdapter {
     public void setBatchMode(boolean isBatchMode) {
         this.isBatchMode = isBatchMode;
         notifyDataSetChanged();
+    }
+
+    private static final class ViewHolder {
+        final CheckBox cbItem;
+        final TextView tvSeq;
+        final TextView tvName;
+        final TextView tvDuration;
+
+        ViewHolder(View root) {
+            cbItem = root.findViewById(R.id.cbSelect);
+            tvSeq = root.findViewById(R.id.seq);
+            tvName = root.findViewById(R.id.musicname);
+            tvDuration = root.findViewById(R.id.musiclength);
+        }
     }
 }

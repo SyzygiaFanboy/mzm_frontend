@@ -16,6 +16,7 @@ import java.net.URLEncoder;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MusicPlayer {
     private MediaPlayer mediaPlayer;
@@ -37,6 +38,9 @@ public class MusicPlayer {
     private boolean isSeeking = false;
 
     private PlayerStatus playStatus = PlayerStatus.STOPPED;
+    private final AtomicBoolean isSongChanging = new AtomicBoolean(false);
+    private volatile int queueIndex = -1;
+    private volatile String queuePlaylist = null;
     
     // 播放完成的监听器接口
     public interface OnSongCompletionListener {
@@ -83,6 +87,15 @@ public class MusicPlayer {
         void onProgressUpdated(int currentPosition, int totalDuration);
     }
     private ProgressListener progressListener;
+    private final List<ProgressListener> extraProgressListeners = new ArrayList<>();
+
+    public enum PlayMode {
+        SEQUENTIAL,
+        SINGLE_LOOP,
+        SHUFFLE
+    }
+
+    private PlayMode playMode = PlayMode.SEQUENTIAL;
     public void setOnPlaybackStateChangeListener(OnPlaybackStateChangeListener listener) {
         this.stateChangeListener = listener;
     }
@@ -90,7 +103,51 @@ public class MusicPlayer {
     public void setProgressListener(ProgressListener listener) {
         this.progressListener = listener;
     }
+
+    public void addProgressListener(ProgressListener listener) {
+        if (listener == null) {
+            return;
+        }
+        if (!extraProgressListeners.contains(listener)) {
+            extraProgressListeners.add(listener);
+        }
+    }
+
+    public void removeProgressListener(ProgressListener listener) {
+        extraProgressListeners.remove(listener);
+    }
+
+    public PlayMode getPlayMode() {
+        return playMode;
+    }
+
+    public void setPlayMode(PlayMode playMode) {
+        if (playMode == null) {
+            return;
+        }
+        this.playMode = playMode;
+        notifyPlaybackStateChanged();
+    }
+
+    public boolean isSongChanging() {
+        return isSongChanging.get();
+    }
+
+    public void setQueueContext(String playlist, int index) {
+        this.queuePlaylist = playlist;
+        this.queueIndex = index;
+    }
+
+    public int getQueueIndex() {
+        return queueIndex;
+    }
+
+    public String getQueuePlaylist() {
+        return queuePlaylist;
+    }
+
     public void loadMusic(Song song) throws IOException {
+        isSongChanging.set(true);
         // 加入此段代码以防止 completion 回调在 reset 后误触发
         isCompletionLegitimate = true;
         if (mediaPlayer != null) {
@@ -138,6 +195,7 @@ public class MusicPlayer {
             playStatus = PlayerStatus.PLAYING;
             mp.start();
             startProgressUpdates();
+            isSongChanging.set(false);
             
             // 修改这部分：通知所有播放状态变化监听器
             notifyPlaybackStateChanged();
@@ -147,7 +205,7 @@ public class MusicPlayer {
             stopProgressUpdates();
 
             // 加保护：仅在合法状态下才回调
-            if (isCompletionLegitimate && completionListener != null) {
+            if (!isSongChanging.get() && isCompletionLegitimate && completionListener != null) {
                 new Handler(Looper.getMainLooper()).post(() -> {
                     completionListener.onSongCompleted();
                 });
@@ -184,6 +242,11 @@ public class MusicPlayer {
         currentPosition = 0;
         if (progressListener != null) {
             progressListener.onProgressUpdated(0, 0);
+        }
+        for (ProgressListener listener : extraProgressListeners) {
+            if (listener != null) {
+                listener.onProgressUpdated(0, 0);
+            }
         }
     }
     public void release() {
@@ -229,6 +292,11 @@ public class MusicPlayer {
                     int duration = mediaPlayer.getDuration();
                     if (progressListener != null) {
                         progressListener.onProgressUpdated(currentPos, duration);
+                    }
+                    for (ProgressListener listener : extraProgressListeners) {
+                        if (listener != null) {
+                            listener.onProgressUpdated(currentPos, duration);
+                        }
                     }
 
                     progressHandler.postDelayed(this, 20);
@@ -276,6 +344,7 @@ public void pause() {
 public void stop() {
     playStatus = PlayerStatus.STOPPED;
     isCompletionLegitimate = false;
+    isSongChanging.set(false);
     if (mediaPlayer != null) {
         try {
             if (playStatus == PlayerStatus.PLAYING || playStatus == PlayerStatus.PAUSED) {
@@ -311,6 +380,11 @@ public void stop() {
             mediaPlayer.seekTo(position);
             if (progressListener != null) {
                 progressListener.onProgressUpdated(position, mediaPlayer.getDuration());
+            }
+            for (ProgressListener listener : extraProgressListeners) {
+                if (listener != null) {
+                    listener.onProgressUpdated(position, mediaPlayer.getDuration());
+                }
             }
         }
     }

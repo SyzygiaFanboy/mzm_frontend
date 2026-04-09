@@ -189,11 +189,27 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
                         for (int index : selected) {
                             Playlist p = playlists.get(index);
                             List<Map<String, Object>> songs = MusicLoader.loadSongs(PlaylistListActivity.this, p.getName());
+                            java.util.HashMap<String, Integer> deleteCounts = new java.util.HashMap<>();
+                            for (Map<String, Object> songMap : songs) {
+                                String fp = (String) songMap.get("filePath");
+                                if (fp != null) {
+                                    deleteCounts.put(fp, deleteCounts.getOrDefault(fp, 0) + 1);
+                                }
+                            }
+                            java.util.HashSet<String> processedPaths = new java.util.HashSet<>();
                             for (Map<String, Object> songMap : songs) {
                                 Song s = Song.fromMap(songMap);
                                 SongDeletionUtils.deleteCoverCaches(PlaylistListActivity.this, s.getName(), s.getCoverUrl());
                                 if (shouldDeleteFiles) {
-                                    SongDeletionUtils.deleteAppOwnedAudioFile(PlaylistListActivity.this, s.getFilePath());
+                                    String fp = s.getFilePath();
+                                    if (!processedPaths.contains(fp)) {
+                                        processedPaths.add(fp);
+                                        int refs = MusicLoader.countFilePathReferences(PlaylistListActivity.this, fp);
+                                        int delCount = deleteCounts.getOrDefault(fp, 1);
+                                        if (refs <= delCount) {
+                                            SongDeletionUtils.deleteAppOwnedAudioFile(PlaylistListActivity.this, fp);
+                                        }
+                                    }
                                 }
                             }
 

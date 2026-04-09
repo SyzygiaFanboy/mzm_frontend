@@ -1,6 +1,7 @@
 package com.example.myapplication;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.graphics.Bitmap;
 import android.util.Log;
 import android.view.View;
@@ -99,9 +100,19 @@ public class GlobalBottomPlayerManager {
     }
 
     private void setupListeners(Activity activity) {
+        View bottomPlayerContainer = bottomPlayerContainerMap.get(activity);
+        if (bottomPlayerContainer != null) {
+            bottomPlayerContainer.setOnClickListener(v -> {
+                activity.startActivity(new Intent(activity, MusicDetailActivity.class));
+            });
+        }
         ImageButton bottomPlayPauseBtn = bottomPlayPauseBtnMap.get(activity);
         if (bottomPlayPauseBtn != null) {
             bottomPlayPauseBtn.setOnClickListener(v -> {
+                if (musicPlayer != null && musicPlayer.getCurrentSong() == null) {
+                    activity.startActivity(new Intent(activity, MusicDetailActivity.class));
+                    return;
+                }
                 OnBottomPlayerClickListener listener = clickListenerMap.get(activity);
                 if (listener != null) {
                     listener.onPlayPauseClick();
@@ -161,7 +172,7 @@ public class GlobalBottomPlayerManager {
                     bottomArtistName.setText("未知艺术家");
                     bottomAlbumCover.setImageResource(R.drawable.default_cover);
                     bottomPlayPauseBtn.setImageResource(android.R.drawable.ic_media_play);
-                    bottomPlayPauseBtn.setEnabled(false);
+                    bottomPlayPauseBtn.setEnabled(true);
                 }
             });
         }
