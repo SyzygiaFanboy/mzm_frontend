@@ -5,10 +5,12 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.CheckBox;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.constraintlayout.widget.ConstraintLayout;
 
+import com.example.myapplication.MusicCoverUtils;
 import com.example.myapplication.R;
 
 import java.util.List;
@@ -25,6 +27,7 @@ public class BatchModeAdapter extends android.widget.BaseAdapter {
     private List<Map<String, Object>> data;
     private boolean isBatchMode;
     private final LayoutInflater inflater;
+    private final Context context;
 
     // 监听器的方法
     public void setOnSelectAllListener(OnSelectAllListener listener) {
@@ -33,6 +36,7 @@ public class BatchModeAdapter extends android.widget.BaseAdapter {
 
     public BatchModeAdapter(Context context, List<Map<String, Object>> data, int resource, String[] from, int[] to) {
         this.data = data;
+        this.context = context;
         this.inflater = LayoutInflater.from(context);
     }
 
@@ -79,11 +83,35 @@ public class BatchModeAdapter extends android.widget.BaseAdapter {
 
         Map<String, Object> item = data.get(position);
 
-        Object indexObj = item.get("index");
-        holder.tvSeq.setText(indexObj != null ? String.valueOf(indexObj) : String.valueOf(position + 1));
+        String filePath = null;
+        Object filePathObj = item.get("filePath");
+        if (filePathObj != null) {
+            filePath = String.valueOf(filePathObj);
+        }
+
+        String coverUrl = null;
+        Object coverUrlObj = item.get("coverUrl");
+        if (coverUrlObj != null) {
+            coverUrl = String.valueOf(coverUrlObj);
+        }
+
+        if (filePath == null || filePath.isEmpty()) {
+            holder.ivCover.setImageResource(R.drawable.default_cover);
+        } else {
+            MusicCoverUtils.loadCoverSmart(filePath, coverUrl, context, holder.ivCover);
+        }
 
         Object nameObj = item.get("name");
-        holder.tvName.setText(nameObj != null ? String.valueOf(nameObj) : "");
+        String fullName = nameObj != null ? String.valueOf(nameObj) : "";
+        String songName = fullName;
+        String artistName = "";
+        int splitIndex = fullName.indexOf(" - ");
+        if (splitIndex > 0) {
+            artistName = fullName.substring(0, splitIndex).trim();
+            songName = fullName.substring(splitIndex + 3).trim();
+        }
+        holder.tvName.setText(songName);
+        holder.tvArtist.setText(artistName);
 
         Object durationObj = item.get("TimeDuration");
         holder.tvDuration.setText(durationObj != null ? String.valueOf(durationObj) : "");
@@ -133,14 +161,16 @@ public class BatchModeAdapter extends android.widget.BaseAdapter {
 
     private static final class ViewHolder {
         final CheckBox cbItem;
-        final TextView tvSeq;
+        final ImageView ivCover;
         final TextView tvName;
+        final TextView tvArtist;
         final TextView tvDuration;
 
         ViewHolder(View root) {
             cbItem = root.findViewById(R.id.cbSelect);
-            tvSeq = root.findViewById(R.id.seq);
+            ivCover = root.findViewById(R.id.songCover);
             tvName = root.findViewById(R.id.musicname);
+            tvArtist = root.findViewById(R.id.artistName);
             tvDuration = root.findViewById(R.id.musiclength);
         }
     }

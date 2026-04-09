@@ -106,6 +106,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     private MusicPlayer musicPlayer;
     private TextView preogress = null;
     private ImageView albumArt;
+    private TextView playlistTitle;
     // private List<Map<String, Object>> musicList = new ArrayList<>(); //
     // 确保非空//这里因为listitem是私有变量，得先创建个全局的先，，，
     private SeekBar progressBar = null;
@@ -194,6 +195,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
 
+        playlistTitle = findViewById(R.id.playlistTitle);
+
         // 获取全局MusicPlayer实例
         musicPlayer = ((MyApp) getApplication()).getMusicPlayer();
         musicPlayer.setOnSongCompletionListener(this);
@@ -243,8 +246,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             // 保持当前进度
             TextView currentSongTV = findViewById(R.id.currentSong);
             currentSongTV.setText(song.getName());
-            // 修复：直接使用当前播放歌曲的coverUrl
-            loadMusicCover(song.getFilePath(), song.getCoverUrl());
         } else {
             playBtn.setEnabled(false);
             playBtn.setText("播放");
@@ -259,8 +260,13 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         if (currentPlaylist == null)
             currentPlaylist = "默认歌单";
 
+        if (playlistTitle != null) {
+            playlistTitle.setText(currentPlaylist);
+        }
+
         // 加载歌单但不影响播放状态
         loadMusicList(listview, currentPlaylist);
+        refreshHeaderCover();
 
         RadioGroup radioGroup = findViewById(R.id.radiogroup);
         if (radioGroup != null) {
@@ -493,7 +499,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                 }
                                 progressBar.setProgress(0);
                                 preogress.setText("请选择歌曲");
-                                albumArt.setImageResource(R.drawable.default_cover);
                                 TextView currentSongTV = findViewById(R.id.currentSong);
                                 currentSongTV.setText("当前播放：暂无歌曲");
                                 playBtn.setText("播放");
@@ -516,6 +521,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                             adapter.setData(musicList);
                             adapter.setBatchMode(false);
                         }
+
+                        refreshHeaderCover();
 
                         isBatchMode = false;
                         cbSelectAll.setVisibility(View.GONE);
@@ -620,6 +627,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
                 // 更新持久化存储
                 updatePersistentStorage();
+                refreshHeaderCover();
             }
         });
 
@@ -643,6 +651,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
                 // 更新持久化存储
                 updatePersistentStorage();
+                refreshHeaderCover();
             }
         });
 //        deletebtn.setOnClickListener(v -> {
@@ -714,6 +723,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                     updatePlaylistCover(currentPlaylist);
                                     MusicLoader.appendMusic(this, newSong);
                                     ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
+                                    refreshHeaderCover();
                                     updateNavButtons(); // 添加这行来启用按钮
                                     Toast.makeText(MainActivity.this, "已添加到歌单", Toast.LENGTH_SHORT).show();
                                 } else {
@@ -770,6 +780,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                     updatePlaylistCover(currentPlaylist);
                                     MusicLoader.appendMusic(this, newSong);
                                     ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
+                                    refreshHeaderCover();
                                     updateNavButtons(); // 添加这行来启用按钮
 
                                     // 更新进度条
@@ -809,6 +820,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
                     updatePlaylistCover(currentPlaylist);
                     ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
+                    refreshHeaderCover();
                     updateNavButtons(); // 添加这行来启用按钮
                 }
             });
@@ -911,10 +923,10 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             btnPrevious.setEnabled(false);
             TextView currentSongTV = findViewById(R.id.currentSong);
             currentSongTV.setText("当前播放：暂无歌曲");
-            albumArt.setImageResource(R.drawable.default_cover);
             progressBar.setProgress(0);
             preogress.setText("00:00");
         });
+        refreshHeaderCover();
         selectedPosition = -1;
         selectedPositions.clear();
         isAllSelected = false;
@@ -930,8 +942,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             musicPlayer.setCurrentPositiontozero();
             btnPrevious.setEnabled(false);
             btnNext.setEnabled(false);
-            albumArt.setImageResource(R.drawable.default_cover);
-
             currentSongTV.setText("当前播放: 暂无歌曲");
         }
         runOnUiThread(() -> {
@@ -1053,6 +1063,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         listview.setItemChecked(selectedPosition, true);
         listview.smoothScrollToPosition(selectedPosition);
         updatePersistentStorage();
+        refreshHeaderCover();
         // if (selectedPosition >= 0 && selectedPosition < musicList.size()) {
         // Map<String, Object> selectedSongMap = musicList.get(selectedPosition);
         // selectSong = Song.fromMap(selectedSongMap); // 更新成员变量
@@ -1083,6 +1094,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
         // 如果需要更新持久化存储中的数据，可以在这里同步更新文件内容
         updatePersistentStorage();
+        refreshHeaderCover();
         // if (selectedPosition >= 0 && selectedPosition < musicList.size()) {
         // Map<String, Object> selectedSongMap = musicList.get(selectedPosition);
         // selectSong = Song.fromMap(selectedSongMap); // 更新成员变量
@@ -1460,6 +1472,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     adapter.setData(musicList);
                     adapter.notifyDataSetChanged();
                 }
+                refreshHeaderCover();
                 // 更新“上一曲/下一曲”按钮状态
                 boolean hasItems = !musicList.isEmpty();
                 btnNext.setEnabled(hasItems);
@@ -1742,6 +1755,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                         listview.setSelection(0);
                     }
                     updatePlaylistCover(currentPlaylist);
+                    refreshHeaderCover();
                 }
 
                 // dismissProgressDialog();
@@ -1919,7 +1933,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             runOnUiThread(() -> {
                 progressBar.setProgress(0);
                 preogress.setText("请选择歌曲");
-                albumArt.setImageResource(R.drawable.default_cover);
                 TextView currentSongTV = findViewById(R.id.currentSong);
                 currentSongTV.setText("当前播放：暂无歌曲");
             });
@@ -1989,12 +2002,10 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             musicPlayer.setCurrentPositiontozero();
             btnPrevious.setEnabled(false);
             btnNext.setEnabled(false);
-            albumArt.setImageResource(R.drawable.default_cover);
-
             currentSongTV.setText("当前播放: 暂无歌曲");
         }
 
-        albumArt.setImageResource(R.drawable.default_cover);
+        refreshHeaderCover();
     }
 
     // 这个地方需要修改，增加一下一键删除的单选
@@ -2028,6 +2039,9 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     }
 
     private void loadMusicList(ListView listview, String playlist) {
+        if (playlistTitle != null) {
+            playlistTitle.setText(playlist);
+        }
         // 保存当前播放的歌曲信息
         Song currentPlayingSong = musicPlayer.getCurrentSong();
         boolean wasPlaying = musicPlayer.isPlaying();
@@ -2080,6 +2094,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             listview.setItemChecked(selectedPosition, true);
             listview.smoothScrollToPosition(selectedPosition);
         }
+
+        refreshHeaderCover();
     }
 
     // 验证文件有效性
@@ -2150,7 +2166,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
         song = songToPlay;
         selectSong = songToPlay;
-        loadMusicCover(songToPlay.getFilePath());
 
         TextView currentSongTV = findViewById(R.id.currentSong);
         currentSongTV.setText(songToPlay.getName());
@@ -2213,7 +2228,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         currentSongTV.setText(selectSong.getName());
         playBtn.setEnabled(true);
         musicPlayer.setCurrentPositiontozero();
-        loadMusicCover(selectSong.getFilePath());
 
         isResettingProgress = true;
         progressBar.setMax(selectSong.getTimeDuration());
@@ -2267,7 +2281,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         currentSongTV.setText(selectSong.getName());
         playBtn.setEnabled(true);
         musicPlayer.setCurrentPositiontozero();
-        loadMusicCover(selectSong.getFilePath());
 
         isResettingProgress = true;
         progressBar.setMax(selectSong.getTimeDuration());
@@ -3345,7 +3358,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 currentSongTV.setText(selectSong.getName());
                 playBtn.setEnabled(true);
                 musicPlayer.setCurrentPositiontozero();
-                loadMusicCover(selectSong.getFilePath());
 
                 isResettingProgress = true;
                 // 重新设置进度条最大值和归零
@@ -3409,6 +3421,30 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             }
         }
 
+    }
+
+    private void refreshHeaderCover() {
+        if (albumArt == null) {
+            return;
+        }
+        runOnUiThread(() -> {
+            if (musicList == null || musicList.isEmpty()) {
+                albumArt.setImageResource(R.drawable.default_cover);
+                return;
+            }
+
+            Map<String, Object> first = musicList.get(0);
+            Object filePathObj = first.get("filePath");
+            String filePath = filePathObj != null ? String.valueOf(filePathObj) : null;
+            Object coverUrlObj = first.get("coverUrl");
+            String coverUrl = coverUrlObj != null ? String.valueOf(coverUrlObj) : null;
+
+            if (filePath == null || filePath.isEmpty()) {
+                albumArt.setImageResource(R.drawable.default_cover);
+                return;
+            }
+            MusicCoverUtils.loadCoverSmart(filePath, coverUrl, this, albumArt);
+        });
     }
 
     private class ProgressSync implements Runnable {
