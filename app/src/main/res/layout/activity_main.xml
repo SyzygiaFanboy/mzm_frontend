@@ -208,16 +208,25 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/albumArt">
 
-            <TextView
-                android:id="@+id/currentSong"
+            <HorizontalScrollView
+                android:id="@+id/currentSongScroll"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:singleLine="true"
-                android:text="当前播放：暂无歌曲"
-                android:textSize="14sp" />
+                android:fillViewport="true"
+                android:overScrollMode="never"
+                android:scrollbars="none">
+
+                <TextView
+                    android:id="@+id/currentSong"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:singleLine="true"
+                    android:text="当前播放：暂无歌曲"
+                    android:textSize="14sp" />
+            </HorizontalScrollView>
 
             <!-- 上移按钮 - 移动到这里 -->
             <ImageButton

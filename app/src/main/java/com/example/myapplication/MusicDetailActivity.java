@@ -7,7 +7,9 @@ import android.graphics.Shader;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.SeekBar;
@@ -19,14 +21,17 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import androidx.palette.graphics.Palette;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.myapplication.model.Song;
+import com.google.android.material.bottomsheet.BottomSheetDialog;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Random;
 
 public class MusicDetailActivity extends AppCompatActivity {
     private MusicPlayer musicPlayer;
@@ -47,6 +52,10 @@ public class MusicDetailActivity extends AppCompatActivity {
 
     private boolean isTracking = false;
     private int selectedPosition = -1;
+
+    private BottomSheetDialog playQueueDialog;
+    private RecyclerView playQueueRv;
+    private PlayQueueAdapter playQueueAdapter;
 
     private final MusicPlayer.ProgressListener progressListener = (currentPosition, totalDuration) -> runOnUiThread(() -> {
         if (!isTracking) {
@@ -71,6 +80,7 @@ public class MusicDetailActivity extends AppCompatActivity {
                 updateSongInfo();
                 updatePlayPauseIcon();
                 updateModeIcon();
+                updatePlayQueueDialogIfShowing();
             });
         }
     };
@@ -128,7 +138,7 @@ public class MusicDetailActivity extends AppCompatActivity {
         setBouncyClick(btnPrev, this::playPrevious);
         setBouncyClick(btnPlayPause, this::togglePlayPause);
         setBouncyClick(btnNext, this::playNext);
-        setBouncyClick(btnPlaylist, () -> Toast.makeText(this, "暂未实现", Toast.LENGTH_SHORT).show());
+        setBouncyClick(btnPlaylist, this::showPlayQueueBottomSheet);
 
         updateSongInfo();
         updatePlayPauseIcon();
@@ -534,110 +544,198 @@ public class MusicDetailActivity extends AppCompatActivity {
     }
 
     private void playNext() {
-        Song currentSong = musicPlayer.getCurrentSong();
-        if (currentSong == null) {
-            Toast.makeText(this, "暂无歌曲", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        String playlist = currentSong.getPlaylist();
-        if (playlist == null || playlist.isEmpty()) {
-            playlist = "默认歌单";
-        }
-
-        List<Map<String, Object>> songs = MusicLoader.loadSongs(this, playlist);
-        if (songs.isEmpty()) {
+        if (!ensurePlayQueueInitialized()) {
             Toast.makeText(this, "播放列表为空", Toast.LENGTH_SHORT).show();
             return;
         }
-
-        int currentPos = resolveCurrentSongPosition(currentSong, songs);
-        int nextPos;
-
-        MusicPlayer.PlayMode mode = musicPlayer.getPlayMode();
-        if (mode == MusicPlayer.PlayMode.SINGLE_LOOP) {
-            nextPos = currentPos;
-        } else if (mode == MusicPlayer.PlayMode.SHUFFLE) {
-            nextPos = new Random().nextInt(songs.size());
-        } else {
-            nextPos = (currentPos + 1) % songs.size();
+        try {
+            musicPlayer.playNextInQueue();
+        } catch (IOException e) {
+            Toast.makeText(this, "切歌失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
-
-        selectedPosition = nextPos;
-        playSongAtIndex(playlist, songs, nextPos);
     }
 
     private void playPrevious() {
-        Song currentSong = musicPlayer.getCurrentSong();
-        if (currentSong == null) {
-            Toast.makeText(this, "暂无歌曲", Toast.LENGTH_SHORT).show();
+        if (!ensurePlayQueueInitialized()) {
+            Toast.makeText(this, "播放列表为空", Toast.LENGTH_SHORT).show();
             return;
         }
+        try {
+            musicPlayer.playPrevInQueue();
+        } catch (IOException e) {
+            Toast.makeText(this, "切歌失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
 
+    private boolean ensurePlayQueueInitialized() {
+        if (musicPlayer.getPlayQueueSize() > 0) {
+            return true;
+        }
+        Song currentSong = musicPlayer.getCurrentSong();
+        if (currentSong == null) {
+            return false;
+        }
         String playlist = currentSong.getPlaylist();
         if (playlist == null || playlist.isEmpty()) {
             playlist = "默认歌单";
         }
-
         List<Map<String, Object>> songs = MusicLoader.loadSongs(this, playlist);
         if (songs.isEmpty()) {
+            return false;
+        }
+        List<Song> queue = new ArrayList<>();
+        int currentIndex = 0;
+        for (int i = 0; i < songs.size(); i++) {
+            Song s = Song.fromMap(songs.get(i));
+            if (s.getPlaylist() == null || s.getPlaylist().isEmpty()) {
+                Song fixed = new Song(s.getTimeDuration(), s.getName(), s.getFilePath(), playlist);
+                fixed.setCoverUrl(s.getCoverUrl());
+                fixed.setOnlineSongId(s.getOnlineSongId());
+                s = fixed;
+            }
+            queue.add(s);
+            if (s.equals(currentSong)) {
+                currentIndex = i;
+            }
+        }
+        musicPlayer.setPlayQueue(playlist, queue, currentIndex);
+        return true;
+    }
+
+    private void showPlayQueueBottomSheet() {
+        if (!ensurePlayQueueInitialized()) {
             Toast.makeText(this, "播放列表为空", Toast.LENGTH_SHORT).show();
             return;
         }
-
-        MusicPlayer.PlayMode mode = musicPlayer.getPlayMode();
-
-        int currentPos = resolveCurrentSongPosition(currentSong, songs);
-        int prePos;
-        if (mode == MusicPlayer.PlayMode.SINGLE_LOOP) {
-            prePos = currentPos;
-        } else if (mode == MusicPlayer.PlayMode.SHUFFLE) {
-            prePos = new Random().nextInt(songs.size());
-        } else {
-            prePos = currentPos == 0 ? songs.size() - 1 : currentPos - 1;
+        List<Song> queue = musicPlayer.getPlayQueueSnapshot();
+        int currentIndex = musicPlayer.getQueueIndex();
+        BottomSheetDialog dialog = new BottomSheetDialog(this);
+        View content = getLayoutInflater().inflate(R.layout.bottom_sheet_play_queue, null);
+        RecyclerView rv = content.findViewById(R.id.play_queue_list);
+        rv.setLayoutManager(new LinearLayoutManager(this));
+        PlayQueueAdapter adapter = new PlayQueueAdapter(queue, currentIndex, pos -> {
+            if (pos == musicPlayer.getQueueIndex()) {
+//                dialog.dismiss();
+                return;
+            }
+            try {
+                musicPlayer.playAtQueueIndex(pos);
+            } catch (IOException e) {
+                Toast.makeText(this, "切歌失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+            dialog.dismiss();
+        });
+        rv.setAdapter(adapter);
+        if (currentIndex >= 0 && currentIndex < queue.size()) {
+            rv.scrollToPosition(currentIndex);
         }
-
-        selectedPosition = prePos;
-        playSongAtIndex(playlist, songs, prePos);
+        dialog.setContentView(content);
+        dialog.setOnShowListener(d -> {
+            View bottomSheet = dialog.findViewById(com.google.android.material.R.id.design_bottom_sheet);
+            if (bottomSheet != null) {
+                int h = getResources().getDisplayMetrics().heightPixels;
+                ViewGroup.LayoutParams lp = bottomSheet.getLayoutParams();
+                lp.height = (int) (h * 0.66f);
+                bottomSheet.setLayoutParams(lp);
+            }
+        });
+        dialog.setOnDismissListener(d -> {
+            if (playQueueDialog == dialog) {
+                playQueueDialog = null;
+                playQueueRv = null;
+                playQueueAdapter = null;
+            }
+        });
+        playQueueDialog = dialog;
+        playQueueRv = rv;
+        playQueueAdapter = adapter;
+        dialog.show();
     }
 
-    private int resolveCurrentSongPosition(Song currentSong, List<Map<String, Object>> songs) {
-        if (songs == null || songs.isEmpty()) {
-            return 0;
-        }
-        if (selectedPosition >= 0 && selectedPosition < songs.size()) {
-            Song s = Song.fromMap(songs.get(selectedPosition));
-            if (s.equals(currentSong)) {
-                return selectedPosition;
-            }
-        }
-        for (int i = 0; i < songs.size(); i++) {
-            Song s = Song.fromMap(songs.get(i));
-            if (s.equals(currentSong)) {
-                selectedPosition = i;
-                return i;
-            }
-        }
-        selectedPosition = 0;
-        return 0;
-    }
-
-    private void playSongAtIndex(String playlist, List<Map<String, Object>> songs, int index) {
-        if (songs == null || songs.isEmpty() || index < 0 || index >= songs.size()) {
+    private void updatePlayQueueDialogIfShowing() {
+        if (playQueueDialog == null || !playQueueDialog.isShowing() || playQueueRv == null || playQueueAdapter == null) {
             return;
         }
-        Song targetSong = Song.fromMap(songs.get(index));
-        try {
-            if (musicPlayer.isPlaying() || musicPlayer.isPaused()) {
-                musicPlayer.stop();
+        List<Song> queue = musicPlayer.getPlayQueueSnapshot();
+        int currentIndex = musicPlayer.getQueueIndex();
+        playQueueAdapter.setData(queue);
+        playQueueAdapter.setActiveIndex(currentIndex);
+        if (currentIndex >= 0 && currentIndex < queue.size()) {
+            playQueueRv.scrollToPosition(currentIndex);
+        }
+    }
+
+    private static final class PlayQueueAdapter extends RecyclerView.Adapter<PlayQueueAdapter.VH> {
+        interface OnItemClick {
+            void onClick(int position);
+        }
+
+        private final List<Song> data = new ArrayList<>();
+        private int activeIndex;
+        private final OnItemClick onItemClick;
+
+        PlayQueueAdapter(List<Song> data, int activeIndex, OnItemClick onItemClick) {
+            if (data != null) {
+                this.data.addAll(data);
             }
-            musicPlayer.setCurrentPositiontozero();
-            musicPlayer.setQueueContext(playlist, index);
-            musicPlayer.loadMusic(targetSong);
-            seekBar.setProgress(0);
-            tvTime.setText("00:00 / " + formatTime(musicPlayer.getDuration()));
-        } catch (IOException e) {
-            Toast.makeText(this, "切歌失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            this.activeIndex = activeIndex;
+            this.onItemClick = onItemClick;
+        }
+
+        void setActiveIndex(int index) {
+            activeIndex = index;
+            notifyDataSetChanged();
+        }
+
+        void setData(List<Song> newData) {
+            data.clear();
+            if (newData != null) {
+                data.addAll(newData);
+            }
+            notifyDataSetChanged();
+        }
+
+        @Override
+        public VH onCreateViewHolder(ViewGroup parent, int viewType) {
+            View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_play_queue, parent, false);
+            return new VH(v);
+        }
+
+        @Override
+        public void onBindViewHolder(VH holder, int position) {
+            Song s = data.get(position);
+            String fullName = s != null ? s.getName() : "";
+            String songName = fullName;
+            String artistName = "";
+            int idx = fullName != null ? fullName.indexOf(" - ") : -1;
+            if (idx > 0) {
+                artistName = fullName.substring(0, idx).trim();
+                songName = fullName.substring(idx + 3).trim();
+            }
+            holder.tvSong.setText(songName != null ? songName : "");
+            holder.tvArtist.setText(artistName);
+            holder.itemView.setActivated(position == activeIndex);
+            holder.itemView.setOnClickListener(v -> {
+                if (onItemClick != null) {
+                    onItemClick.onClick(position);
+                }
+            });
+        }
+
+        @Override
+        public int getItemCount() {
+            return data.size();
+        }
+
+        static final class VH extends RecyclerView.ViewHolder {
+            final TextView tvSong;
+            final TextView tvArtist;
+
+            VH(View itemView) {
+                super(itemView);
+                tvSong = itemView.findViewById(R.id.queue_song_name);
+                tvArtist = itemView.findViewById(R.id.queue_artist_name);
+            }
         }
     }
 

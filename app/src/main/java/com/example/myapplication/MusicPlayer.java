@@ -16,6 +16,7 @@ import java.net.URLEncoder;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MusicPlayer {
@@ -41,6 +42,8 @@ public class MusicPlayer {
     private final AtomicBoolean isSongChanging = new AtomicBoolean(false);
     private volatile int queueIndex = -1;
     private volatile String queuePlaylist = null;
+    private final List<Song> playQueue = new ArrayList<>();
+    private final Random random = new Random();
     
     // 播放完成的监听器接口
     public interface OnSongCompletionListener {
@@ -144,6 +147,98 @@ public class MusicPlayer {
 
     public String getQueuePlaylist() {
         return queuePlaylist;
+    }
+
+    public synchronized void setPlayQueue(String playlist, List<Song> songs, int startIndex) {
+        playQueue.clear();
+        if (songs != null) {
+            playQueue.addAll(songs);
+        }
+        queuePlaylist = playlist;
+        if (playQueue.isEmpty()) {
+            queueIndex = -1;
+        } else {
+            queueIndex = Math.max(0, Math.min(startIndex, playQueue.size() - 1));
+        }
+    }
+
+    public synchronized List<Song> getPlayQueueSnapshot() {
+        return new ArrayList<>(playQueue);
+    }
+
+    public synchronized int getPlayQueueSize() {
+        return playQueue.size();
+    }
+
+    public synchronized void playAtQueueIndex(int index) throws IOException {
+        if (playQueue.isEmpty()) {
+            return;
+        }
+        int target = Math.max(0, Math.min(index, playQueue.size() - 1));
+        queueIndex = target;
+        Song original = playQueue.get(target);
+        Song toPlay = original;
+        if (queuePlaylist != null && (original.getPlaylist() == null || original.getPlaylist().isEmpty())) {
+            Song s = new Song(original.getTimeDuration(), original.getName(), original.getFilePath(), queuePlaylist);
+            s.setCoverUrl(original.getCoverUrl());
+            s.setOnlineSongId(original.getOnlineSongId());
+            toPlay = s;
+        }
+        loadMusic(toPlay);
+    }
+
+    public synchronized int computeNextQueueIndex() {
+        if (playQueue.isEmpty()) {
+            return -1;
+        }
+        int base = queueIndex;
+        if (base < 0 || base >= playQueue.size()) {
+            base = 0;
+        }
+        if (playMode == PlayMode.SINGLE_LOOP) {
+            return base;
+        }
+        if (playMode == PlayMode.SHUFFLE) {
+            return random.nextInt(playQueue.size());
+        }
+        return (base + 1) % playQueue.size();
+    }
+
+    public synchronized int computePrevQueueIndex() {
+        if (playQueue.isEmpty()) {
+            return -1;
+        }
+        int base = queueIndex;
+        if (base < 0 || base >= playQueue.size()) {
+            base = 0;
+        }
+        if (playMode == PlayMode.SINGLE_LOOP) {
+            return base;
+        }
+        if (playMode == PlayMode.SHUFFLE) {
+            return random.nextInt(playQueue.size());
+        }
+        return base == 0 ? playQueue.size() - 1 : base - 1;
+    }
+
+    public void playNextInQueue() throws IOException {
+        int next;
+        synchronized (this) {
+            next = computeNextQueueIndex();
+        }
+        if (next >= 0) {
+            playAtQueueIndex(next);
+        }
+    }
+
+    public void playPrevInQueue() throws IOException {
+        int prev;
+        synchronized (this) {
+            prev = computePrevQueueIndex();
+        }
+        if (prev >= 0) {
+            playAtQueueIndex(prev);
+        }
     }
 
     public void loadMusic(Song song) throws IOException {

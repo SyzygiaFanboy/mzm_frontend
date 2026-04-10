@@ -24,10 +24,10 @@ import android.util.Log;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.AbsListView;
-import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
-import android.util.TypedValue;
+import android.text.TextUtils;
 import android.view.animation.LinearInterpolator;
 import android.widget.AdapterView;
 import android.widget.BaseAdapter;
@@ -36,6 +36,7 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ProgressBar;
@@ -112,10 +113,11 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     private ImageView albumArt;
     private TextView playlistTitle;
     private TextView currentSongText;
+    private HorizontalScrollView currentSongScroll;
     private View currentSongLayout;
-    private ObjectAnimator marqueeAnimator;
-    private float marqueeStartX = 0f;
-    private float marqueeEndX = 0f;
+    private ValueAnimator marqueeAnimator;
+    private int marqueeExtraPaddingRightPx = 0;
+    private int marqueeOriginalPaddingRightPx = 0;
     private String lastCurrentSongDisplayText = null;
 
     private final MusicPlayer.OnPlaybackStateChangeListener playlistPagePlaybackListener = new MusicPlayer.OnPlaybackStateChangeListener() {
@@ -219,7 +221,11 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
         playlistTitle = findViewById(R.id.playlistTitle);
         currentSongText = findViewById(R.id.currentSong);
+        currentSongScroll = findViewById(R.id.currentSongScroll);
         currentSongLayout = findViewById(R.id.currentSongLayout);
+        if (currentSongText != null) {
+            marqueeOriginalPaddingRightPx = currentSongText.getPaddingRight();
+        }
 
         if (currentSongLayout != null) {
             currentSongLayout.setOnClickListener(v -> toggleMarquee());
@@ -892,12 +898,15 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 if (isSongChanging) {
                     return;
                 }
-                if (!musicList.isEmpty()) {
+                if (musicPlayer.getPlayQueueSize() > 0) {
+                    musicPlayer.playNextInQueue();
+                } else if (!musicList.isEmpty()) {
                     playNextSong();
-                    new Handler().postDelayed(() -> {
-                        updateAllPlayButtons();
-                    }, 100); // 延迟100ms确保播放状态已更新
                 }
+                new Handler().postDelayed(() -> {
+                    updateAllPlayButtons();
+                    refreshCurrentSongBar();
+                }, 100);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -1444,7 +1453,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         int pos = getCurrentSongPosition();
         if (pos >= 0 && pos < musicList.size()) {
             selectedPosition = pos;
-            musicPlayer.setQueueContext(currentPlaylist, pos);
             if (listview != null) {
                 listview.setItemChecked(pos, true);
             }
@@ -1471,7 +1479,14 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             if (current == null || current.getName() == null || current.getName().isEmpty() || "暂无歌曲".equals(current.getName())) {
                 displayText = "当前播放：暂无歌曲";
             } else {
-                displayText = "当前播放：" + current.getName();
+                String p = musicPlayer != null ? musicPlayer.getQueuePlaylist() : null;
+                if (p == null || p.isEmpty()) {
+                    p = current.getPlaylist();
+                }
+                if (p == null || p.isEmpty()) {
+                    p = currentPlaylist;
+                }
+                displayText = "当前播放：" + current.getName() + "  ·  " + p;
             }
 
             if (lastCurrentSongDisplayText == null || !lastCurrentSongDisplayText.equals(displayText)) {
@@ -1492,6 +1507,9 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         if (currentSongText == null) {
             currentSongText = findViewById(R.id.currentSong);
         }
+        if (currentSongScroll == null) {
+            currentSongScroll = findViewById(R.id.currentSongScroll);
+        }
         if (currentSongText == null) {
             return;
         }
@@ -1511,38 +1529,59 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     }
 
     private void startMarqueeIfNeeded() {
-        if (currentSongText == null) {
+        if (currentSongText == null || currentSongScroll == null) {
             return;
         }
         currentSongText.post(() -> {
-            if (currentSongText == null) {
+            if (currentSongText == null || currentSongScroll == null) {
                 return;
             }
+            int containerWidth = currentSongScroll.getWidth();
             float textWidth = currentSongText.getPaint().measureText(String.valueOf(currentSongText.getText()));
-            int containerWidth = currentSongText.getWidth();
             if (containerWidth <= 0 || textWidth <= containerWidth) {
                 stopMarquee();
                 return;
             }
 
-            float extraGap = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 40, getResources().getDisplayMetrics());
-            marqueeStartX = 0f;
-            marqueeEndX = -(textWidth - containerWidth + extraGap);
+            marqueeExtraPaddingRightPx = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 40, getResources().getDisplayMetrics());
+            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) currentSongScroll.getLayoutParams();
+            if (lp != null) {
+                lp.width = 0;
+                lp.weight = 1;
+                currentSongScroll.setLayoutParams(lp);
+            }
 
-            long duration = (long) (Math.abs(marqueeEndX - marqueeStartX) * 12);
-            duration = Math.max(2500L, Math.min(duration, 20000L));
+            ViewGroup.LayoutParams tvLp = currentSongText.getLayoutParams();
+            tvLp.width = ViewGroup.LayoutParams.WRAP_CONTENT;
+            currentSongText.setLayoutParams(tvLp);
+            currentSongText.setSingleLine(true);
+            currentSongText.setEllipsize(null);
+            currentSongText.setPadding(currentSongText.getPaddingLeft(), currentSongText.getPaddingTop(), marqueeOriginalPaddingRightPx + marqueeExtraPaddingRightPx, currentSongText.getPaddingBottom());
 
-            stopMarquee();
-            marqueeAnimator = ObjectAnimator.ofFloat(currentSongText, "translationX", marqueeStartX, marqueeEndX);
+            currentSongText.requestLayout();
+            currentSongText.invalidate();
+            currentSongScroll.scrollTo(0, 0);
+
+            int maxScroll = (int) Math.ceil(textWidth - containerWidth + marqueeExtraPaddingRightPx);
+            long duration = (long) (maxScroll * 15);
+            duration = Math.max(3000L, Math.min(duration, 22000L));
+
+            cancelMarqueeAnimator();
+            marqueeAnimator = ValueAnimator.ofInt(0, Math.max(1, maxScroll));
             marqueeAnimator.setDuration(duration);
             marqueeAnimator.setInterpolator(new LinearInterpolator());
             marqueeAnimator.setRepeatCount(ValueAnimator.INFINITE);
             marqueeAnimator.setRepeatMode(ValueAnimator.RESTART);
+            marqueeAnimator.addUpdateListener(animation -> {
+                if (currentSongScroll != null) {
+                    currentSongScroll.scrollTo((int) animation.getAnimatedValue(), 0);
+                }
+            });
             marqueeAnimator.start();
         });
     }
 
-    private void stopMarquee() {
+    private void cancelMarqueeAnimator() {
         if (marqueeAnimator != null) {
             try {
                 marqueeAnimator.cancel();
@@ -1550,9 +1589,24 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             }
             marqueeAnimator = null;
         }
-        if (currentSongText != null) {
-            currentSongText.setTranslationX(0f);
+        if (currentSongScroll != null) {
+            currentSongScroll.scrollTo(0, 0);
         }
+    }
+
+    private void stopMarquee() {
+        cancelMarqueeAnimator();
+        if (currentSongText == null) {
+            return;
+        }
+        ViewGroup.LayoutParams tvLp = currentSongText.getLayoutParams();
+        tvLp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+        currentSongText.setLayoutParams(tvLp);
+        currentSongText.setSingleLine(true);
+        currentSongText.setEllipsize(TextUtils.TruncateAt.END);
+        currentSongText.setPadding(currentSongText.getPaddingLeft(), currentSongText.getPaddingTop(), marqueeOriginalPaddingRightPx, currentSongText.getPaddingBottom());
+        currentSongText.requestLayout();
+        currentSongText.invalidate();
     }
 
     private void togglePlayPauseFromBar() {
@@ -2299,6 +2353,11 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         Map<String, Object> songMap = musicList.get(index);
         Song songToPlay = Song.fromMap(songMap);
         musicPlayer.setQueueContext(currentPlaylist, index);
+        List<Song> queue = new ArrayList<>();
+        for (Map<String, Object> item : musicList) {
+            queue.add(Song.fromMap(item));
+        }
+        musicPlayer.setPlayQueue(currentPlaylist, queue, index);
 
         if (!isFileValid(songToPlay.getFilePath())) {
             runOnUiThread(() -> {
@@ -2360,6 +2419,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     // 下面的上一首按钮与下一首按钮将来有可能调整UI的时候会删除
     public void next(View view) throws IOException {
         isAutoNextTriggered = true;
+        if (musicPlayer.getPlayQueueSize() > 0) {
+            musicPlayer.playNextInQueue();
+            updateAllPlayButtons();
+            refreshCurrentSongBar();
+            return;
+        }
         int nextPos;
 
         if (musicList.isEmpty()) {
@@ -2413,6 +2478,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     // 上一首按钮处理逻辑
     public void previous(View view) throws IOException {
         isAutoNextTriggered = true;
+        if (musicPlayer.getPlayQueueSize() > 0) {
+            musicPlayer.playPrevInQueue();
+            updateAllPlayButtons();
+            refreshCurrentSongBar();
+            return;
+        }
         int currentPos = musicPlayer.getQueueIndex();
         if (currentPos < 0 || currentPos >= musicList.size()) {
             currentPos = selectedPosition;
@@ -3516,6 +3587,14 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     selectedPositions.remove((Integer) position);
                 }
                 ((BaseAdapter) parent.getAdapter()).notifyDataSetChanged();
+                return;
+            }
+
+            Map<String, Object> item = (Map<String, Object>) parent.getAdapter().getItem(position);
+            Song clickedSong = item != null ? Song.fromMap(item) : null;
+            Song current = musicPlayer != null ? musicPlayer.getCurrentSong() : null;
+            if (clickedSong != null && current != null && current.equals(clickedSong) && (musicPlayer.isPlaying() || musicPlayer.isPaused())) {
+                startActivity(new Intent(MainActivity.this, MusicDetailActivity.class));
                 return;
             }
 
