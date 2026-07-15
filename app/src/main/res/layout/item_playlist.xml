@@ -2,6 +2,7 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:gravity="center_vertical"
     android:orientation="horizontal"
     android:padding="8dp">
 
@@ -16,7 +17,7 @@
         android:id="@+id/playlistCover"
         android:layout_width="50dp"
         android:layout_height="50dp"
-        android:contentDescription="默认歌单封面"
+        android:contentDescription="歌单封面"
         android:scaleType="fitCenter"
         android:src="@drawable/default_playlist_cover" />
 
@@ -35,6 +36,32 @@
             android:text="歌单名"
             android:textSize="16sp"
             android:textStyle="bold" />
+
+        <LinearLayout
+            android:id="@+id/biliInfoRow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <ImageView
+                android:id="@+id/ivBiliAvatar"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:contentDescription="B站头像"
+                android:scaleType="centerCrop" />
+
+            <TextView
+                android:id="@+id/tvBiliInfo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="B站用户"
+                android:textColor="@android:color/darker_gray"
+                android:textSize="12sp" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/songCount"

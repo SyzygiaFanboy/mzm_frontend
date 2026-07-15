@@ -4,8 +4,10 @@ import android.app.Activity;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.ImageDecoder;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
+import android.os.Build;
 import android.util.Log;
 import android.widget.ImageView;
 import java.io.File;
@@ -14,6 +16,7 @@ import com.example.myapplication.utils.ImageCacheManager;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
 import java.util.HashMap;
 
 import okhttp3.Call;
@@ -34,6 +37,10 @@ public class MusicCoverUtils {
      */
     public static Bitmap getCoverFromFile(String filePath, Context context) {
         if (filePath == null || filePath.isEmpty()) {
+            return null;
+        }
+
+        if (filePath.startsWith("bili://")) {
             return null;
         }
 
@@ -58,6 +65,12 @@ public class MusicCoverUtils {
         try {
             if (filePath.startsWith("content://")) {
                 retriever.setDataSource(context, Uri.parse(filePath));
+            } else if (filePath.startsWith("file://")) {
+                String localPath = Uri.parse(filePath).getPath();
+                if (localPath == null || localPath.isEmpty()) {
+                    return null;
+                }
+                retriever.setDataSource(localPath);
             } else {
                 retriever.setDataSource(filePath);
             }
@@ -89,19 +102,50 @@ public class MusicCoverUtils {
     }
 
     public static void loadCoverFromUrl(String coverUrl, Context context, ImageView imageView, CoverLoadCallback callback) {
+        loadCoverFromUrlInternal(coverUrl, context, imageView, callback, null);
+    }
+
+    private static String normalizeCoverUrl(String coverUrl) {
+        if (coverUrl == null) {
+            return "";
+        }
+        String normalizedUrl = coverUrl;
+        if (normalizedUrl.startsWith("//")) {
+            normalizedUrl = "https:" + normalizedUrl;
+        } else if (normalizedUrl.startsWith("http://")) {
+            normalizedUrl = "https://" + normalizedUrl.substring("http://".length());
+        }
+        return normalizedUrl;
+    }
+
+    private static boolean shouldApplyToView(ImageView imageView, String expectedTag) {
+        if (expectedTag == null) {
+            return true;
+        }
+        Object tag = imageView != null ? imageView.getTag() : null;
+        return expectedTag.equals(tag);
+    }
+
+    private static void loadCoverFromUrlInternal(String coverUrl, Context context, ImageView imageView, CoverLoadCallback callback, String expectedTag) {
         if (coverUrl == null || coverUrl.isEmpty()) {
-            imageView.setImageResource(R.drawable.default_cover);
+            if (imageView != null && shouldApplyToView(imageView, expectedTag)) {
+                imageView.setImageResource(R.drawable.default_playlist_cover);
+            }
             return;
         }
+
+        final String normalizedUrlFinal = normalizeCoverUrl(coverUrl);
 
         ImageCacheManager cacheManager = ImageCacheManager.getInstance(context);
 
         // 先检查缓存
-        Bitmap cachedBitmap = cacheManager.getBitmap(coverUrl);
+        Bitmap cachedBitmap = cacheManager.getBitmap(normalizedUrlFinal);
         if (cachedBitmap != null) {
-            imageView.setImageBitmap(cachedBitmap);
-            if (callback != null) {
-                callback.onCoverLoaded(cachedBitmap);
+            if (imageView != null && shouldApplyToView(imageView, expectedTag)) {
+                imageView.setImageBitmap(cachedBitmap);
+                if (callback != null) {
+                    callback.onCoverLoaded(cachedBitmap);
+                }
             }
             return;
         }
@@ -111,43 +155,75 @@ public class MusicCoverUtils {
             try {
                 OkHttpClient client = new OkHttpClient();
                 Request request = new Request.Builder()
-                        .url(coverUrl)
+                        .url(normalizedUrlFinal)
+                        .addHeader("Accept", "image/jpeg,image/png,image/webp,*/*")
                         .addHeader("User-Agent", "Mozilla/5.0")
                         .addHeader("Referer", "https://www.bilibili.com/")
                         .build();
 
                 Response response = client.newCall(request).execute();
                 if (response.isSuccessful() && response.body() != null) {
-                    InputStream inputStream = response.body().byteStream();
-                    Bitmap bitmap = BitmapFactory.decodeStream(inputStream);
+                    byte[] bytes;
+                    try (InputStream inputStream = response.body().byteStream();
+                         ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+                        byte[] buffer = new byte[8192];
+                        int len;
+                        while ((len = inputStream.read(buffer)) != -1) {
+                            baos.write(buffer, 0, len);
+                        }
+                        bytes = baos.toByteArray();
+                    }
+                    Bitmap bitmap = null;
+                    if (bytes != null && bytes.length > 0) {
+                        bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                        if (bitmap == null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                            try {
+                                ImageDecoder.Source source = ImageDecoder.createSource(java.nio.ByteBuffer.wrap(bytes));
+                                bitmap = ImageDecoder.decodeBitmap(source);
+                            } catch (Exception ignored) {
+                            }
+                        }
+                    }
 
                     if (bitmap != null) {
                         // 保存到缓存
-                        cacheManager.putBitmap(coverUrl, bitmap);
+                        cacheManager.putBitmap(normalizedUrlFinal, bitmap);
 
                         // 更新UI
+                        final Bitmap bitmapFinal = bitmap;
                         ((Activity) context).runOnUiThread(() -> {
-                            imageView.setImageBitmap(bitmap);
+                            if (imageView != null && shouldApplyToView(imageView, expectedTag)) {
+                                imageView.setImageBitmap(bitmapFinal);
+                            }
                         });
 
-                        if (callback != null) {
-                            callback.onCoverLoaded(bitmap);
+                        if (callback != null && shouldApplyToView(imageView, expectedTag)) {
+                            callback.onCoverLoaded(bitmapFinal);
                         }
                     } else {
+                        Log.e(TAG, "从URL加载封面失败: decode返回空 url=" + normalizedUrlFinal + " bytes=" + (bytes != null ? bytes.length : 0));
                         ((Activity) context).runOnUiThread(() -> {
-                            imageView.setImageResource(R.drawable.default_cover);
+                            if (imageView != null && shouldApplyToView(imageView, expectedTag)) {
+                                imageView.setImageResource(R.drawable.default_playlist_cover);
+                            }
                         });
                     }
                     response.close();
                 } else {
+                    Log.e(TAG, "从URL加载封面失败: HTTP=" + response.code() + " url=" + normalizedUrlFinal);
                     ((Activity) context).runOnUiThread(() -> {
-                        imageView.setImageResource(R.drawable.default_cover);
+                        if (imageView != null && shouldApplyToView(imageView, expectedTag)) {
+                            imageView.setImageResource(R.drawable.default_playlist_cover);
+                        }
                     });
+                    response.close();
                 }
             } catch (Exception e) {
-                Log.e(TAG, "从URL加载封面失败: " + e.getMessage());
+                Log.e(TAG, "从URL加载封面失败: " + e.getMessage() + " url=" + normalizedUrlFinal);
                 ((Activity) context).runOnUiThread(() -> {
-                    imageView.setImageResource(R.drawable.default_cover);
+                    if (imageView != null && shouldApplyToView(imageView, expectedTag)) {
+                        imageView.setImageResource(R.drawable.default_playlist_cover);
+                    }
                 });
             }
         }).start();
@@ -161,6 +237,10 @@ public class MusicCoverUtils {
     }
 
     public static void loadCoverSmart(String musicFilePath, String coverUrl, Context context, ImageView imageView, CoverLoadCallback callback) {
+        String requestKey = (musicFilePath == null ? "" : musicFilePath) + "|" + normalizeCoverUrl(coverUrl);
+        if (imageView != null) {
+            imageView.setTag(requestKey);
+        }
         new Thread(() -> {
             // 首先尝试从音频文件中获取嵌入的封面
             Bitmap coverBitmap = getCoverFromFile(musicFilePath, context);
@@ -168,9 +248,11 @@ public class MusicCoverUtils {
             if (coverBitmap != null) {
                 // 如果音频文件中有封面，直接使用
                 ((Activity) context).runOnUiThread(() -> {
-                    imageView.setImageBitmap(coverBitmap);
+                    if (imageView != null && shouldApplyToView(imageView, requestKey)) {
+                        imageView.setImageBitmap(coverBitmap);
+                    }
                 });
-                if (callback != null) {
+                if (callback != null && shouldApplyToView(imageView, requestKey)) {
                     callback.onCoverLoaded(coverBitmap);
                 }
             } else {
@@ -179,8 +261,12 @@ public class MusicCoverUtils {
                         && (coverUrl == null || coverUrl.isEmpty() || "null".equalsIgnoreCase(coverUrl))) {
                     Bitmap netCover = getCoverFromNetworkAudio(musicFilePath, context);
                     if (netCover != null) {
-                        ((Activity) context).runOnUiThread(() -> imageView.setImageBitmap(netCover));
-                        if (callback != null) {
+                        ((Activity) context).runOnUiThread(() -> {
+                            if (imageView != null && shouldApplyToView(imageView, requestKey)) {
+                                imageView.setImageBitmap(netCover);
+                            }
+                        });
+                        if (callback != null && shouldApplyToView(imageView, requestKey)) {
                             callback.onCoverLoaded(netCover);
                         }
                         return;
@@ -188,7 +274,7 @@ public class MusicCoverUtils {
                 }
                 // 如果音频文件中没有封面，从URL加载
                 ((Activity) context).runOnUiThread(() -> {
-                    loadCoverFromUrl(coverUrl, context, imageView, callback);
+                    loadCoverFromUrlInternal(coverUrl, context, imageView, callback, requestKey);
                 });
             }
         }).start();

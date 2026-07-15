@@ -27,7 +27,10 @@ public final class SongDeletionUtils {
         }
 
         String scheme = uri != null ? uri.getScheme() : null;
-        if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme) || "content".equalsIgnoreCase(scheme)) {
+        if ("http".equalsIgnoreCase(scheme)
+                || "https".equalsIgnoreCase(scheme)
+                || "content".equalsIgnoreCase(scheme)
+                || "bili".equalsIgnoreCase(scheme)) {
             return false;
         }
 
@@ -145,7 +148,10 @@ public final class SongDeletionUtils {
         }
 
         String scheme = uri != null ? uri.getScheme() : null;
-        if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme) || "content".equalsIgnoreCase(scheme)) {
+        if ("http".equalsIgnoreCase(scheme)
+                || "https".equalsIgnoreCase(scheme)
+                || "content".equalsIgnoreCase(scheme)
+                || "bili".equalsIgnoreCase(scheme)) {
             return null;
         }
 

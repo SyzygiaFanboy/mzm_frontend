@@ -2,12 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
-    <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <application
         android:name=".MyApp"
         android:allowBackup="true"
@@ -49,7 +52,9 @@
         </activity>
         <activity
             android:name=".SearchActivity"
-            android:exported="false"    />
+            android:exported="false"
+            android:theme="@style/AppTheme"
+            android:windowSoftInputMode="adjustNothing|stateHidden" />
         <activity
             android:name=".RegisterActivity"
             android:exported="true"/>
@@ -62,13 +67,81 @@
             android:exported="false"
             android:theme="@style/AppTheme" />
         <activity
+            android:name=".BiliFavPickerActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme"
+            android:windowSoftInputMode="adjustNothing|stateHidden" />
+        <activity
+            android:name=".BiliFavDetailActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme" />
+        <activity
+            android:name=".BiliSharePickerActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme"
+            android:windowSoftInputMode="adjustNothing|stateHidden" />
+        <activity
             android:name=".UploadActivity"
             android:exported="false"
+            android:windowSoftInputMode="adjustNothing|stateHidden"
             android:parentActivityName=".PlaylistListActivity">
             <meta-data
                 android:name="android.support.PARENT_ACTIVITY"
                 android:value=".PlaylistListActivity" />
         </activity>
+        <activity
+            android:name=".ExportSongsActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustNothing|stateHidden"
+            android:parentActivityName=".PlaylistListActivity">
+            <meta-data
+                android:name="android.support.PARENT_ACTIVITY"
+                android:value=".PlaylistListActivity" />
+        </activity>
+
+        <activity
+            android:name=".OnlineMusicActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme"
+            android:windowSoftInputMode="adjustNothing|stateHidden"
+            android:parentActivityName=".MainActivity">
+            <meta-data
+                android:name="android.support.PARENT_ACTIVITY"
+                android:value=".MainActivity" />
+        </activity>
+
+        <activity
+            android:name=".AboutActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme"
+            android:parentActivityName=".PlaylistListActivity">
+            <meta-data
+                android:name="android.support.PARENT_ACTIVITY"
+                android:value=".PlaylistListActivity" />
+        </activity>
+
+        <activity
+            android:name=".AdminUsersActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme"
+            android:parentActivityName=".PlaylistListActivity">
+            <meta-data
+                android:name="android.support.PARENT_ACTIVITY"
+                android:value=".PlaylistListActivity" />
+        </activity>
+
+        <service
+            android:name=".PlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <receiver
+            android:name="androidx.media.session.MediaButtonReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
 
     </application>
 

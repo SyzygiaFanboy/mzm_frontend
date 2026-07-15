@@ -170,7 +170,7 @@ public class MusicDetailActivity extends AppCompatActivity {
         if (currentSong == null) {
             tvSongName.setText("暂无歌曲");
             tvArtistName.setText("未知艺术家");
-            ivCover.setImageResource(R.drawable.default_cover);
+            ivCover.setImageResource(R.drawable.default_playlist_cover);
             applyDefaultBackground();
             seekBar.setMax(0);
             seekBar.setProgress(0);
@@ -194,6 +194,8 @@ public class MusicDetailActivity extends AppCompatActivity {
         tvSongName.setText(songName != null ? songName : "暂无歌曲");
         tvArtistName.setText(artistName);
 
+        ivCover.setImageResource(R.drawable.default_playlist_cover);
+        applyDefaultBackground();
         MusicCoverUtils.loadCoverSmart(currentSong.getFilePath(), currentSong.getCoverUrl(), this, ivCover, this::applyDynamicBackground);
 
         btnPrev.setEnabled(true);
@@ -577,7 +579,7 @@ public class MusicDetailActivity extends AppCompatActivity {
         }
         String playlist = currentSong.getPlaylist();
         if (playlist == null || playlist.isEmpty()) {
-            playlist = "默认歌单";
+            return false;
         }
         List<Map<String, Object>> songs = MusicLoader.loadSongs(this, playlist);
         if (songs.isEmpty()) {

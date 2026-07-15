@@ -20,6 +20,7 @@ import com.example.myapplication.model.Playlist;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecyclerAdapter.ViewHolder> {
     private Context context;
@@ -45,9 +46,7 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
         this.playlists = playlists;
         this.selectedList = new ArrayList<>();
         this.onStartDragListener = dragListener;
-        for (int i = 0; i < playlists.size(); i++) {
-            selectedList.add(false);
-        }
+        ensureSelectionStateSize();
     }
 
     public void setOnItemClickListener(OnItemClickListener listener) {
@@ -60,6 +59,7 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
     }
 
     public void toggleSelected(int position) {
+        ensureSelectionStateSize();
         selectedList.set(position, !selectedList.get(position));
         if (onSelectionChanged != null) onSelectionChanged.run();
         notifyDataSetChanged();
@@ -70,6 +70,7 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
     }
 
     public void selectAll() {
+        ensureSelectionStateSize();
         for (int i = 0; i < selectedList.size(); i++) {
             selectedList.set(i, true);
         }
@@ -77,6 +78,7 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
     }
 
     public void clearSelection() {
+        ensureSelectionStateSize();
         for (int i = 0; i < selectedList.size(); i++) {
             selectedList.set(i, false);
         }
@@ -98,6 +100,7 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
     }
 
     public void removeAt(int index) {
+        ensureSelectionStateSize();
         playlists.remove(index);
         selectedList.remove(index);
         notifyDataSetChanged();
@@ -105,12 +108,13 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
 
     public void addPlaylist(Playlist playlist) {
         playlists.add(playlist);
-        selectedList.add(false);  // 确保同步增长
+        ensureSelectionStateSize();
         notifyDataSetChanged();
     }
 
     // 交换位置的方法，用于拖拽排序
     public void swapItems(int fromPosition, int toPosition) {
+        ensureSelectionStateSize();
         if (fromPosition < toPosition) {
             for (int i = fromPosition; i < toPosition; i++) {
                 Collections.swap(playlists, i, i + 1);
@@ -134,6 +138,9 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
 
     // 添加设置当前播放歌单的方法
     public void setCurrentPlayingPlaylist(String playlistName) {
+        if (Objects.equals(this.currentPlayingPlaylist, playlistName)) {
+            return;
+        }
         this.currentPlayingPlaylist = playlistName;
         notifyDataSetChanged();
     }
@@ -145,6 +152,7 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
 
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+        ensureSelectionStateSize();
         Playlist playlist = playlists.get(position);
     
         String coverPath = playlist.getLatestCoverPath();
@@ -170,6 +178,27 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
         }
         holder.tvName.setText(playlist.getName());
         holder.tvCount.setText("歌曲数：" + playlist.getSongCount());
+
+        if (playlist.isBiliBound()
+                && playlist.getBiliUid() != null && !playlist.getBiliUid().isEmpty()) {
+            holder.biliInfoRow.setVisibility(View.VISIBLE);
+            String displayName = playlist.getBiliUserName();
+            if (displayName == null || displayName.trim().isEmpty()) {
+                displayName = "B站用户";
+            }
+            holder.tvBiliInfo.setText(displayName + " (UID: " + playlist.getBiliUid() + ")");
+            String avatar = playlist.getBiliAvatarUrl();
+            if (avatar != null && !avatar.trim().isEmpty() && !"null".equalsIgnoreCase(avatar.trim())) {
+                holder.ivBiliAvatar.setImageDrawable(null);
+                MusicCoverUtils.loadCoverFromUrl(avatar, context, holder.ivBiliAvatar);
+            } else {
+                holder.ivBiliAvatar.setImageDrawable(null);
+            }
+        } else {
+            holder.biliInfoRow.setVisibility(View.INVISIBLE);
+            holder.ivBiliAvatar.setImageDrawable(null);
+            holder.tvBiliInfo.setText("");
+        }
     
         holder.cbSelect.setVisibility(inManageMode ? View.VISIBLE : View.GONE);
         holder.cbSelect.setChecked(selectedList.get(position));
@@ -225,7 +254,17 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
 
     @Override
     public int getItemCount() {
+        ensureSelectionStateSize();
         return playlists.size();
+    }
+
+    private void ensureSelectionStateSize() {
+        while (selectedList.size() < playlists.size()) {
+            selectedList.add(false);
+        }
+        while (selectedList.size() > playlists.size()) {
+            selectedList.remove(selectedList.size() - 1);
+        }
     }
 
     public static class ViewHolder extends RecyclerView.ViewHolder {
@@ -234,6 +273,9 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
         TextView tvCount;
         ImageView ivHandle;
         CheckBox cbSelect;
+        View biliInfoRow;
+        ImageView ivBiliAvatar;
+        TextView tvBiliInfo;
 
         public ViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -242,6 +284,9 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
             tvCount = itemView.findViewById(R.id.songCount);
             ivHandle = itemView.findViewById(R.id.imgHandle);
             cbSelect = itemView.findViewById(R.id.cbSelect);
+            biliInfoRow = itemView.findViewById(R.id.biliInfoRow);
+            ivBiliAvatar = itemView.findViewById(R.id.ivBiliAvatar);
+            tvBiliInfo = itemView.findViewById(R.id.tvBiliInfo);
         }
     }
 }

@@ -27,6 +27,6 @@
         android:text="用户名"
         android:textSize="18sp"
         android:textStyle="bold"
-        android:textColor="@android:color/white"
+        android:textColor="?attr/colorOnPrimary"
         android:layout_gravity="center_horizontal" />
 </LinearLayout>

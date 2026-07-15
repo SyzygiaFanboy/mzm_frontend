@@ -8,13 +8,12 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
-import java.io.BufferedReader;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.net.Socket;
 import java.util.HashMap;
 import java.util.Map;
+
+import org.json.JSONObject;
 
 public class LoginActivity extends AppCompatActivity {
 
@@ -43,31 +42,46 @@ public class LoginActivity extends AppCompatActivity {
                 return;
             }
 
-
-            if ("1".equals(username) && "1".equals(password)) {
-                Log.d("登录与注册-登录", "登录成功");
-                saveLoginStatus(true);
-                startActivity(new Intent(LoginActivity.this, PlaylistListActivity.class));
-                finish();
-                return; // 直接返回，不执行后续网络请求
-            }
-
             HttpUtil.post("login", params, new HttpUtil.HttpCallback() {
                 @Override
                 public void onSuccess(String response) {
                     Log.d("LoginActivity","SUCCESSINHERE");
                     runOnUiThread(() -> {
-                        if ("SUCCESS".equals(response) ) {
-                            // 保存登录状态
-                            SharedPreferences preferences = getSharedPreferences("user_pref", MODE_PRIVATE);
-                            preferences.edit().putBoolean("is_logged_in", true).apply();
-                            //启动页面
-                            startActivity(new Intent(LoginActivity.this, PlaylistListActivity.class));
-                            Log.d("LoginActivity","SUCCESS");
-                            finish();
-                        } else {
-                            Toast.makeText(LoginActivity.this, "用户名或密码错误", Toast.LENGTH_SHORT).show();
+                        boolean ok = false;
+                        boolean isAdmin = false;
+
+                        try {
+                            String trimmed = response != null ? response.trim() : "";
+                            if (trimmed.startsWith("{")) {
+                                JSONObject obj = new JSONObject(trimmed);
+                                ok = "SUCCESS".equalsIgnoreCase(obj.optString("status"));
+                                isAdmin = "admin".equalsIgnoreCase(obj.optString("role"));
+                            } else {
+                                ok = "SUCCESS".equalsIgnoreCase(trimmed);
+                            }
+                        } catch (Exception e) {
+                            ok = false;
                         }
+
+                        if (!ok) {
+                            Toast.makeText(LoginActivity.this, "用户名或密码错误", Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+
+                        if (!isAdmin && "admin".equalsIgnoreCase(username)) {
+                            isAdmin = true;
+                        }
+
+                        SharedPreferences preferences = getSharedPreferences("user_pref", MODE_PRIVATE);
+                        preferences.edit()
+                                .putBoolean("is_logged_in", true)
+                                .putString("username", username)
+                                .putBoolean("is_admin", isAdmin)
+                                .apply();
+
+                        startActivity(new Intent(LoginActivity.this, PlaylistListActivity.class));
+                        Log.d("LoginActivity","SUCCESS");
+                        finish();
                     });
                 }
 

@@ -124,7 +124,7 @@ public class BottomPlayerBarManager {
                 bottomPlayerContainer.setVisibility(View.VISIBLE);
                 bottomSongName.setText("暂无歌曲");
                 bottomArtistName.setText("未知艺术家");
-                bottomAlbumCover.setImageResource(R.drawable.default_cover);
+                bottomAlbumCover.setImageResource(R.drawable.default_playlist_cover);
                 bottomPlayPauseBtn.setImageResource(android.R.drawable.ic_media_play);
                 bottomPlayPauseBtn.setEnabled(false);
                 hasInitialized = true;
@@ -146,7 +146,7 @@ public class BottomPlayerBarManager {
                     if (coverBitmap != null) {
                         bottomAlbumCover.setImageBitmap(coverBitmap);
                     } else {
-                        bottomAlbumCover.setImageResource(R.drawable.default_cover);
+                        bottomAlbumCover.setImageResource(R.drawable.default_playlist_cover);
                     }
                 });
             }).start();

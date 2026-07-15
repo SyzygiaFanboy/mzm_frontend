@@ -25,6 +25,8 @@ public class BiliVideoAdapter extends BaseAdapter {
 
     private final Context context;
     private final List<BiliVideoItem> videoItems;
+    private final int itemLayoutRes;
+    private final boolean darkStyle;
     private OnSelectAllListener selectAllListener;
     private OnItemSelectListener itemSelectListener;
     private String highlightBvid = null; // 需要高亮的 bvid
@@ -32,6 +34,15 @@ public class BiliVideoAdapter extends BaseAdapter {
     public BiliVideoAdapter(Context context) {
         this.context = context;
         this.videoItems = new ArrayList<>();
+        this.itemLayoutRes = R.layout.bili_video_item;
+        this.darkStyle = false;
+    }
+
+    public BiliVideoAdapter(Context context, boolean darkStyle) {
+        this.context = context;
+        this.videoItems = new ArrayList<>();
+        this.itemLayoutRes = darkStyle ? R.layout.bili_video_item_dark : R.layout.bili_video_item;
+        this.darkStyle = darkStyle;
     }
 
     public void setHighlightBvid(String bvid) {
@@ -95,7 +106,7 @@ public class BiliVideoAdapter extends BaseAdapter {
     public View getView(int position, View convertView, ViewGroup parent) {
         ViewHolder holder;
         if (convertView == null) {
-            convertView = LayoutInflater.from(context).inflate(R.layout.bili_video_item, parent, false);
+            convertView = LayoutInflater.from(context).inflate(itemLayoutRes, parent, false);
             holder = new ViewHolder();
             holder.cbSelect = convertView.findViewById(R.id.cbSelect);
             holder.tvTitle = convertView.findViewById(R.id.tvVideoTitle);
@@ -115,7 +126,7 @@ public class BiliVideoAdapter extends BaseAdapter {
         if (highlightBvid != null && item.getBvid().contains(highlightBvid)) {
             convertView.setBackgroundColor(0x33FF0000); // 半透明红色高亮
         } else {
-            convertView.setBackgroundColor(0x00000000); // 默认透明背景
+            convertView.setBackgroundColor(darkStyle ? 0x22000000 : 0x00000000);
         }
 
         // 避免CheckBox状态错乱

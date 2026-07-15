@@ -2,29 +2,54 @@ package com.example.myapplication;
 import static android.content.ContentValues.TAG;
 
 import android.content.Context;
-import android.media.MediaPlayer;
+import android.content.Intent;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
 import com.example.myapplication.model.Song;
+import com.example.myapplication.network.ServerConfig;
+
+import androidx.media3.common.AudioAttributes;
+import androidx.media3.common.C;
+import androidx.media3.common.MediaItem;
+import androidx.media3.common.Player;
+import androidx.media3.datasource.DefaultDataSource;
+import androidx.media3.datasource.okhttp.OkHttpDataSource;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.io.IOException;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.HttpUrl;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 
 public class MusicPlayer {
-    private MediaPlayer mediaPlayer;
     private static MusicPlayer instance;
     private Song currentSong;
     //private PlayerThread playerThread = new PlayerThread();
     private Handler handler = new Handler();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private boolean isPrepared = false;
     private int currentPosition = 0;
     private Handler progressHandler = new Handler();
@@ -44,6 +69,41 @@ public class MusicPlayer {
     private volatile String queuePlaylist = null;
     private final List<Song> playQueue = new ArrayList<>();
     private final Random random = new Random();
+
+    private ExoPlayer exoPlayer;
+    private final OkHttpClient okHttpClient;
+    private final OkHttpDataSource.Factory okHttpDataSourceFactory;
+    private final AudioManager audioManager;
+    private AudioFocusRequest audioFocusRequest;
+    private boolean hasAudioFocus = false;
+    private boolean resumeOnAudioFocusGain = false;
+    private final AudioManager.OnAudioFocusChangeListener audioFocusChangeListener = focusChange -> {
+        switch (focusChange) {
+            case AudioManager.AUDIOFOCUS_GAIN:
+                hasAudioFocus = true;
+                if (resumeOnAudioFocusGain && currentSong != null && !isSongChanging.get()) {
+                    resumeOnAudioFocusGain = false;
+                    play();
+                }
+                break;
+            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
+            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                if (isPlaying()) {
+                    resumeOnAudioFocusGain = true;
+                    pauseInternal(false);
+                }
+                break;
+            case AudioManager.AUDIOFOCUS_LOSS:
+                hasAudioFocus = false;
+                resumeOnAudioFocusGain = false;
+                if (isPlaying()) {
+                    pauseInternal(true);
+                }
+                break;
+            default:
+                break;
+        }
+    };
     
     // 播放完成的监听器接口
     public interface OnSongCompletionListener {
@@ -72,7 +132,62 @@ public class MusicPlayer {
 
     public MusicPlayer(Context context) {
         this.context = context.getApplicationContext(); // 使用全局上下文
-        mediaPlayer = new MediaPlayer();
+        this.audioManager = (AudioManager) this.context.getSystemService(Context.AUDIO_SERVICE);
+        this.okHttpClient = new OkHttpClient();
+        this.okHttpDataSourceFactory = new OkHttpDataSource.Factory(okHttpClient);
+
+        Map<String, String> defaultHeaders = new HashMap<>();
+        defaultHeaders.put("User-Agent", "Mozilla/5.0");
+        okHttpDataSourceFactory.setDefaultRequestProperties(defaultHeaders);
+
+        DefaultDataSource.Factory dataSourceFactory = new DefaultDataSource.Factory(
+                this.context,
+                okHttpDataSourceFactory
+        );
+        DefaultMediaSourceFactory mediaSourceFactory = new DefaultMediaSourceFactory(dataSourceFactory);
+        exoPlayer = new ExoPlayer.Builder(this.context)
+                .setMediaSourceFactory(mediaSourceFactory)
+                .build();
+        AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                .setUsage(C.USAGE_MEDIA)
+                .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                .build();
+        exoPlayer.setAudioAttributes(audioAttributes, false);
+        exoPlayer.setHandleAudioBecomingNoisy(true);
+        exoPlayer.setWakeMode(C.WAKE_MODE_NETWORK);
+        exoPlayer.addListener(new Player.Listener() {
+            @Override
+            public void onPlaybackStateChanged(int playbackState) {
+                if (playbackState == Player.STATE_READY) {
+                    isPrepared = true;
+                    if (exoPlayer != null && !exoPlayer.getPlayWhenReady()) {
+                        isSongChanging.set(false);
+                    }
+                    notifyPlaybackStateChanged();
+                } else if (playbackState == Player.STATE_ENDED) {
+                    handleCompletion();
+                }
+            }
+
+            @Override
+            public void onIsPlayingChanged(boolean isPlaying) {
+                if (isPlaying) {
+                    playStatus = PlayerStatus.PLAYING;
+                    isSongChanging.set(false);
+                    startProgressUpdates();
+                } else {
+                    int playbackState = exoPlayer != null ? exoPlayer.getPlaybackState() : Player.STATE_IDLE;
+                    boolean isTransientTransition = isSongChanging.get()
+                            || playbackState == Player.STATE_BUFFERING
+                            || playbackState == Player.STATE_ENDED;
+                    if (!isTransientTransition && isPrepared && playStatus == PlayerStatus.PLAYING) {
+                        playStatus = PlayerStatus.PAUSED;
+                    }
+                    stopProgressUpdates();
+                }
+                notifyPlaybackStateChanged();
+            }
+        });
     }
     public boolean isReleased(){
         return isReleased;
@@ -245,92 +360,119 @@ public class MusicPlayer {
         isSongChanging.set(true);
         // 加入此段代码以防止 completion 回调在 reset 后误触发
         isCompletionLegitimate = true;
-        if (mediaPlayer != null) {
-            mediaPlayer.setOnCompletionListener(null);  // 清除旧监听器
-        }
-
-        // 统一 reset 或 new， 需要保证回到 Idle
-        if (mediaPlayer == null) {
-            mediaPlayer = new MediaPlayer();
-        } else {
-            mediaPlayer.reset();
-        }
         currentSong = song;
         isPrepared  = false;
-
-
-        // 在后台异步通知服务器，play_count 嘉嘉
-        String onlineId = song.getOnlineSongId();
-        Log.d("MusicPlayer", "loadMusic → triggering play-count for ID=" + song.getOnlineSongId());
-        if (onlineId != null && !onlineId.isEmpty()) {
-            new Thread(() -> {
-                HttpURLConnection conn = null;
-                try {
-                    String urlStr = com.example.myapplication.network.ServerConfig.playStreamUrl(
-                            URLEncoder.encode(onlineId, "UTF-8")
-                    );
-                    conn = (HttpURLConnection) new URL(urlStr).openConnection();
-                    conn.setRequestMethod("GET");
-                    conn.setConnectTimeout(3000);
-                    conn.setReadTimeout(3000);
-                    int responseCode = conn.getResponseCode();  // 触发请求
-                    Log.d(TAG, "播放热度请求响应码: " + responseCode);
-                } catch (Exception e) {
-                    Log.e(TAG, "播放热度增加失败" + e.getMessage());
-                } finally {
-                    if (conn != null) conn.disconnect();
-                }
-            }).start();
+        playStatus = PlayerStatus.STOPPED;
+        stopProgressUpdates();
+        if (exoPlayer != null) {
+            exoPlayer.stop();
+            exoPlayer.clearMediaItems();
         }
 
-        // 监听器（网络跟本地公用）
-        // 在loadMusic方法中修改OnPreparedListener
-        mediaPlayer.setOnPreparedListener(mp -> {
-            isPrepared = true;
-            playStatus = PlayerStatus.PLAYING;
-            mp.start();
-            startProgressUpdates();
-            isSongChanging.set(false);
-            
-            // 修改这部分：通知所有播放状态变化监听器
-            notifyPlaybackStateChanged();
-        });
-        mediaPlayer.setOnCompletionListener(mp -> {
-            playStatus = PlayerStatus.STOPPED;
-            stopProgressUpdates();
+        triggerPlayCount(song);
+        notifySongChanged();
 
-            // 加保护：仅在合法状态下才回调
-            if (!isSongChanging.get() && isCompletionLegitimate && completionListener != null) {
-                new Handler(Looper.getMainLooper()).post(() -> {
-                    completionListener.onSongCompleted();
-                });
-            }
-
-            // 重置标志
-            isCompletionLegitimate = true;
-        });
-
-
-        // 根据路径类型，设置 DataSource
         String path = song.getFilePath();
-        if (path == null || (!path.startsWith("http") && song.getTimeDuration() <= 0)) {
-            Log.e("MusicPlayer", "无效的歌曲或时长");
+        if (path == null || path.trim().isEmpty()) {
+            isSongChanging.set(false);
             return;
         }
-        if (path.startsWith("http")) {
-            // 网络音频流
-            mediaPlayer.setDataSource(path);
-        } else {
-            // 本地 Content URI
-            Uri uri = Uri.parse(path);
-            mediaPlayer.setDataSource(context, uri);
+
+        if (isBiliPath(path)) {
+            BiliId biliId = parseBiliId(path);
+            if (biliId == null) {
+                isSongChanging.set(false);
+                return;
+            }
+            resolveBiliAudioUrl(biliId.bvid, biliId.cid, audioUrl -> {
+                if (audioUrl == null || audioUrl.isEmpty()) {
+                    isSongChanging.set(false);
+                    return;
+                }
+                Map<String, String> headers = new HashMap<>();
+                headers.put("User-Agent", "Mozilla/5.0");
+                headers.put("Referer", "https://www.bilibili.com/");
+                okHttpDataSourceFactory.setDefaultRequestProperties(headers);
+
+                setAndPrepare(Uri.parse(audioUrl));
+            });
+            return;
         }
-        
-        // 修改这部分：通知所有歌曲变化监听器
-        notifySongChanged();
-        
-        // 异步准备，然后onPreparedListener 会被回调
-        mediaPlayer.prepareAsync();
+
+        Map<String, String> headers = new HashMap<>();
+        headers.put("User-Agent", "Mozilla/5.0");
+        okHttpDataSourceFactory.setDefaultRequestProperties(headers);
+
+        Uri uri = Uri.parse(path);
+        setAndPrepare(uri);
+    }
+
+    private void setAndPrepare(Uri uri) {
+        if (exoPlayer == null || uri == null) {
+            isSongChanging.set(false);
+            return;
+        }
+        if (!requestAudioFocusIfNeeded()) {
+            isSongChanging.set(false);
+            return;
+        }
+        if (!PlaybackService.isRunning()) {
+            PlaybackService.start(context);
+        }
+        exoPlayer.setMediaItem(MediaItem.fromUri(uri));
+        exoPlayer.setPlayWhenReady(true);
+        exoPlayer.prepare();
+    }
+
+    private void triggerPlayCount(Song song) {
+        if (song == null) {
+            return;
+        }
+        String onlineId = song.getOnlineSongId();
+        Log.d("MusicPlayer", "loadMusic → triggering play-count for ID=" + onlineId);
+        if (onlineId == null || onlineId.isEmpty()) {
+            return;
+        }
+        new Thread(() -> {
+            HttpURLConnection conn = null;
+            try {
+                String urlStr = ServerConfig.playStreamUrl(URLEncoder.encode(onlineId, "UTF-8"));
+                conn = (HttpURLConnection) new URL(urlStr).openConnection();
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(3000);
+                conn.setReadTimeout(3000);
+                int responseCode = conn.getResponseCode();
+                Log.d(TAG, "播放热度请求响应码: " + responseCode);
+            } catch (Exception e) {
+                Log.e(TAG, "播放热度增加失败" + e.getMessage());
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        }).start();
+    }
+
+    private void handleCompletion() {
+        stopProgressUpdates();
+
+        boolean shouldAutoNext = !isSongChanging.get() && isCompletionLegitimate && getPlayQueueSize() > 0;
+        if (shouldAutoNext) {
+            isSongChanging.set(true);
+            try {
+                playNextInQueue();
+            } catch (Exception e) {
+                isSongChanging.set(false);
+                playStatus = PlayerStatus.STOPPED;
+                Log.e(TAG, "自动播放下一首失败", e);
+            }
+        } else {
+            playStatus = PlayerStatus.STOPPED;
+        }
+
+        if (!isSongChanging.get() && isCompletionLegitimate && completionListener != null) {
+            new Handler(Looper.getMainLooper()).post(() -> completionListener.onSongCompleted());
+        }
+        isCompletionLegitimate = true;
+        notifyPlaybackStateChanged();
     }
 
     public void resetProgress() {
@@ -345,19 +487,13 @@ public class MusicPlayer {
         }
     }
     public void release() {
-        Log.d("MusicPlayer", "释放 MediaPlayer");
-        stopProgressUpdates(); // 先停止进度更新
-        if (mediaPlayer != null) {
-            try {
-                isReleased = true;
-                if (mediaPlayer.isPlaying()) {
-                    mediaPlayer.stop();
-                }
-                mediaPlayer.release();
-            } catch (IllegalStateException e) {
-                Log.e(TAG, "release error", e);
-            }
-            mediaPlayer = null;
+        Log.d("MusicPlayer", "释放 ExoPlayer");
+        stopProgressUpdates();
+        abandonAudioFocusIfNeeded();
+        if (exoPlayer != null) {
+            isReleased = true;
+            exoPlayer.release();
+            exoPlayer = null;
         }
         isPrepared = false;
         playStatus = PlayerStatus.STOPPED;
@@ -365,15 +501,23 @@ public class MusicPlayer {
     }
     private void startPlayback() {
         if (isPrepared) {
-            mediaPlayer.start();
+            if (exoPlayer != null) {
+                exoPlayer.play();
+            }
             startProgressUpdates();
         }
     }
     public int getDuration() {
-        if (mediaPlayer != null) {
-            return mediaPlayer.getDuration();
-        }
-        return 0;
+        return runOnPlayerThread(() -> {
+            if (exoPlayer == null) {
+                return 0;
+            }
+            long d = exoPlayer.getDuration();
+            if (d < 0) {
+                return 0;
+            }
+            return (int) Math.min(Integer.MAX_VALUE, d);
+        });
     }
     private void startProgressUpdates() {
         stopProgressUpdates(); // 先停止之前的更新
@@ -381,10 +525,11 @@ public class MusicPlayer {
         progressRunnable = new Runnable() {
             @Override
             public void run() {
-                if (mediaPlayer != null && playStatus == PlayerStatus.PLAYING) {
-                    int currentPos = mediaPlayer.getCurrentPosition();
+                if (exoPlayer != null && playStatus == PlayerStatus.PLAYING) {
+                    long currentPosLong = exoPlayer.getCurrentPosition();
+                    int currentPos = (int) Math.min(Integer.MAX_VALUE, Math.max(0L, currentPosLong));
                     currentPosition = currentPos;
-                    int duration = mediaPlayer.getDuration();
+                    int duration = getDuration();
                     if (progressListener != null) {
                         progressListener.onProgressUpdated(currentPos, duration);
                     }
@@ -408,30 +553,34 @@ public class MusicPlayer {
     }
     // 播放，按钮和通用
     public void play() {
-        try {
-            synchronized (this) {
-                if (mediaPlayer != null && isPrepared && !mediaPlayer.isPlaying()) {
-                    playStatus = PlayerStatus.PLAYING;
-                    mediaPlayer.start();
-                    startProgressUpdates();
-                    Log.d("MusicPlayer", "播放开始，通知监听器");
-                    // 通知状态变化
-                    notifyPlaybackStateChanged();
-                }
+        synchronized (this) {
+            if (exoPlayer == null) {
+                return;
             }
-        } catch(IllegalStateException e) {
-            Log.e("MusicPlayer", "播放时发生状态异常", e);
-            release();
-            isPrepared = false;
+            if (!requestAudioFocusIfNeeded()) {
+                return;
+            }
+            if (!PlaybackService.isRunning()) {
+                PlaybackService.start(context);
+            }
+            playStatus = PlayerStatus.PLAYING;
+            exoPlayer.play();
+            startProgressUpdates();
+            notifyPlaybackStateChanged();
         }
     }
 //停，通用
 public void pause() {
-    if (mediaPlayer != null && mediaPlayer.isPlaying()) {
+    pauseInternal(true);
+}
+
+private void pauseInternal(boolean abandonFocus) {
+    if (exoPlayer != null && playStatus == PlayerStatus.PLAYING) {
         playStatus = PlayerStatus.PAUSED;
-        mediaPlayer.pause();
-        Log.d("MusicPlayer", "播放暂停，通知监听器");
-        // 使用新的多监听器通知方法
+        exoPlayer.pause();
+        if (abandonFocus) {
+            abandonAudioFocusIfNeeded();
+        }
         notifyPlaybackStateChanged();
     }
 }
@@ -440,18 +589,12 @@ public void stop() {
     playStatus = PlayerStatus.STOPPED;
     isCompletionLegitimate = false;
     isSongChanging.set(false);
-    if (mediaPlayer != null) {
-        try {
-            if (playStatus == PlayerStatus.PLAYING || playStatus == PlayerStatus.PAUSED) {
-                mediaPlayer.stop();
-            }
-            mediaPlayer.release();
-        } catch (IllegalStateException e) {
-            Log.e(TAG, "stop: MediaPlayer 状态异常", e);
-        }
-        mediaPlayer = null;
+    if (exoPlayer != null) {
+        exoPlayer.stop();
+        exoPlayer.clearMediaItems();
     }
     stopProgressUpdates();
+    abandonAudioFocusIfNeeded();
     // 添加状态通知
     notifyPlaybackStateChanged();
 }
@@ -471,28 +614,59 @@ public void stop() {
     }
 
     public void seekTo(int position) {
-        if (mediaPlayer != null && position >= 0 && position <= mediaPlayer.getDuration()) {
-            mediaPlayer.seekTo(position);
+        int duration = getDuration();
+        if (exoPlayer != null && position >= 0 && (duration <= 0 || position <= duration)) {
+            exoPlayer.seekTo(position);
             if (progressListener != null) {
-                progressListener.onProgressUpdated(position, mediaPlayer.getDuration());
+                progressListener.onProgressUpdated(position, duration);
             }
             for (ProgressListener listener : extraProgressListeners) {
                 if (listener != null) {
-                    listener.onProgressUpdated(position, mediaPlayer.getDuration());
+                    listener.onProgressUpdated(position, duration);
                 }
             }
         }
     }
     public int getCurrentPosition() {
-        if (mediaPlayer != null && !isReleased) { // 检查状态
+        return runOnPlayerThread(() -> {
+            if (exoPlayer == null || isReleased) {
+                return 0;
+            }
+            long pos = exoPlayer.getCurrentPosition();
+            if (pos < 0) {
+                return 0;
+            }
+            return (int) Math.min(Integer.MAX_VALUE, pos);
+        });
+    }
+
+    private int runOnPlayerThread(java.util.concurrent.Callable<Integer> callable) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
             try {
-                return mediaPlayer.getCurrentPosition();
-            } catch (IllegalStateException e) {
-                Log.e("MusicPlayer", "MediaPlayer 状态异常", e);
+                return callable.call();
+            } catch (Exception e) {
+                Log.e(TAG, "播放器状态读取失败", e);
                 return 0;
             }
         }
-        return 0;
+
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicInteger result = new AtomicInteger(0);
+        mainHandler.post(() -> {
+            try {
+                result.set(callable.call());
+            } catch (Exception e) {
+                Log.e(TAG, "播放器状态读取失败", e);
+            } finally {
+                latch.countDown();
+            }
+        });
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return result.get();
     }
     //归零
     public void setCurrentPositiontozero(){
@@ -534,5 +708,139 @@ public void stop() {
         if (currentSong != null) {
             currentSong.setCoverUrl(coverUrl);
         }
+    }
+
+    private static boolean isBiliPath(String filePath) {
+        return filePath != null && filePath.toLowerCase(Locale.ROOT).startsWith("bili://");
+    }
+
+    private static final class BiliId {
+        final String bvid;
+        final long cid;
+        BiliId(String bvid, long cid) {
+            this.bvid = bvid;
+            this.cid = cid;
+        }
+    }
+
+    private static BiliId parseBiliId(String filePath) {
+        if (filePath == null) {
+            return null;
+        }
+        String raw = filePath.substring("bili://".length());
+        String[] parts = raw.split("_", 2);
+        String bvid = parts.length > 0 ? parts[0] : null;
+        long cid = -1;
+        if (parts.length >= 2) {
+            try {
+                cid = Long.parseLong(parts[1]);
+            } catch (Exception ignored) {
+                cid = -1;
+            }
+        }
+        if (bvid == null || bvid.isEmpty()) {
+            return null;
+        }
+        return new BiliId(bvid, cid);
+    }
+
+    private void resolveBiliAudioUrl(String bvid, long cid, java.util.function.Consumer<String> callback) {
+        if (bvid == null || bvid.isEmpty()) {
+            if (callback != null) {
+                callback.accept(null);
+            }
+            return;
+        }
+
+        HttpUrl.Builder builder = HttpUrl.parse(ServerConfig.appBaseUrl() + "BiliResolveServlet")
+                .newBuilder()
+                .addQueryParameter("bvid", bvid);
+        if (cid > 0) {
+            builder.addQueryParameter("cid", String.valueOf(cid));
+        }
+        HttpUrl url = builder.build();
+
+        Request req = new Request.Builder()
+                .url(url)
+                .get()
+                .build();
+
+        okHttpClient.newCall(req).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    if (callback != null) {
+                        callback.accept(null);
+                    }
+                });
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                String audioUrl = null;
+                try {
+                    String body = response.body() != null ? response.body().string() : "";
+                    com.google.gson.JsonObject obj = com.google.gson.JsonParser.parseString(body).getAsJsonObject();
+                    int code = obj.has("code") ? obj.get("code").getAsInt() : -1;
+                    if (code == 0 && obj.has("audio_url") && !obj.get("audio_url").isJsonNull()) {
+                        audioUrl = obj.get("audio_url").getAsString();
+                    }
+                } catch (Exception ignored) {
+                    audioUrl = null;
+                } finally {
+                    String finalAudioUrl = audioUrl;
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        if (callback != null) {
+                            callback.accept(finalAudioUrl);
+                        }
+                    });
+                }
+            }
+        });
+    }
+
+    private boolean requestAudioFocusIfNeeded() {
+        if (audioManager == null) {
+            return true;
+        }
+        if (hasAudioFocus) {
+            return true;
+        }
+        int result;
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            if (audioFocusRequest == null) {
+                audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                        .setOnAudioFocusChangeListener(audioFocusChangeListener)
+                        .setWillPauseWhenDucked(true)
+                        .setAudioAttributes(new android.media.AudioAttributes.Builder()
+                                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                                .build())
+                        .build();
+            }
+            result = audioManager.requestAudioFocus(audioFocusRequest);
+        } else {
+            result = audioManager.requestAudioFocus(
+                    audioFocusChangeListener,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN
+            );
+        }
+        hasAudioFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        return hasAudioFocus;
+    }
+
+    private void abandonAudioFocusIfNeeded() {
+        if (audioManager == null || !hasAudioFocus) {
+            return;
+        }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            if (audioFocusRequest != null) {
+                audioManager.abandonAudioFocusRequest(audioFocusRequest);
+            }
+        } else {
+            audioManager.abandonAudioFocus(audioFocusChangeListener);
+        }
+        hasAudioFocus = false;
     }
 }

@@ -71,7 +71,7 @@ public class MusicLoader {
                         continue;
                     }
 
-                    int duration = jsonObject.getInt("duration");
+                    int duration = normalizeStoredDuration(jsonObject.getInt("duration"), uriString);
                     String name = jsonObject.getString("name");
                     String coverUrl = jsonObject.optString("coverUrl", "");
                     String onlineSongId = jsonObject.optString("onlineSongId", "");
@@ -102,6 +102,94 @@ public class MusicLoader {
         }
 
         return list;
+    }
+
+    public static List<Song> loadAllSongs(Context context) {
+        File musicFile = getMusicFile(context);
+        List<Song> songs = new ArrayList<>();
+        List<String> keptLines = new ArrayList<>();
+        boolean needCleanup = false;
+        Set<String> seenKeys = new HashSet<>();
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(musicFile))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                try {
+                    JSONObject jsonObject = new JSONObject(line);
+                    String playlist = jsonObject.optString("playlist", "");
+                    String filePath = jsonObject.optString("filePath", "");
+
+                    if (filePath.isEmpty()) {
+                        needCleanup = true;
+                        continue;
+                    }
+
+                    if (shouldDropMissingAppOwnedFile(context, filePath)) {
+                        needCleanup = true;
+                        continue;
+                    }
+
+                    keptLines.add(line);
+
+                    String key = normalizeToPathKey(filePath);
+                    if (key != null && seenKeys.contains(key)) {
+                        continue;
+                    }
+                    if (key != null) {
+                        seenKeys.add(key);
+                    }
+
+                    int duration = normalizeStoredDuration(jsonObject.optInt("duration", 0), filePath);
+                    String name = jsonObject.optString("name", "未知歌曲");
+                    String coverUrl = jsonObject.optString("coverUrl", "");
+                    String onlineSongId = jsonObject.optString("onlineSongId", "");
+
+                    Song song = new Song(duration, name, filePath, playlist);
+                    if (!coverUrl.isEmpty()) {
+                        song.setCoverUrl(coverUrl);
+                    }
+                    if (!onlineSongId.isEmpty()) {
+                        song.setOnlineSongId(onlineSongId);
+                    }
+                    songs.add(song);
+                } catch (Exception e) {
+                    Log.e(TAG, "解析歌曲行失败: " + line, e);
+                    needCleanup = true;
+                }
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "加载歌曲列表失败: " + e.getMessage());
+        }
+
+        if (needCleanup) {
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(musicFile, false))) {
+                for (String keptLine : keptLines) {
+                    writer.write(keptLine);
+                    writer.newLine();
+                }
+            } catch (IOException e) {
+                Log.e(TAG, "清理无效JSON行失败: " + e.getMessage());
+            }
+        }
+
+        return songs;
+    }
+
+    public static List<Song> loadAllLocalSongs(Context context) {
+        List<Song> all = loadAllSongs(context);
+        List<Song> local = new ArrayList<>();
+        for (Song s : all) {
+            String fp = s.getFilePath();
+            if (fp == null) {
+                continue;
+            }
+            String lower = fp.toLowerCase();
+            if (lower.startsWith("http://") || lower.startsWith("https://")) {
+                continue;
+            }
+            local.add(s);
+        }
+        return local;
     }
 
     public static int countFilePathReferences(Context context, String filePath) {
@@ -413,5 +501,18 @@ public class MusicLoader {
         }
 
         return paths;
+    }
+
+    private static int normalizeStoredDuration(int duration, String filePath) {
+        if (duration <= 0) {
+            return 0;
+        }
+        if (duration >= 20000) {
+            int millisToSeconds = duration / 1000;
+            if (millisToSeconds > 0 && millisToSeconds <= 24 * 3600) {
+                return millisToSeconds;
+            }
+        }
+        return duration;
     }
 }

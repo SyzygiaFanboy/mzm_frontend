@@ -35,6 +35,32 @@
                 android:layout_height="match_parent">
 
                 <ImageButton
+                    android:id="@+id/btnServer"
+                    android:layout_width="30dp"
+                    android:layout_height="30dp"
+                    android:layout_marginEnd="16dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="访问服务器"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/browser"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toStartOf="@id/btnExport"
+                    app:layout_constraintTop_toTopOf="parent" />
+
+                <ImageButton
+                    android:id="@+id/btnExport"
+                    android:layout_width="30dp"
+                    android:layout_height="30dp"
+                    android:layout_marginEnd="16dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="导出歌曲"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_fileexport"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toStartOf="@id/btnUpload"
+                    app:layout_constraintTop_toTopOf="parent" />
+
+                <ImageButton
                     android:id="@+id/btnUpload"
                     android:layout_width="30dp"
                     android:layout_height="30dp"
@@ -126,7 +152,7 @@
         android:layout_width="320dp"
         android:layout_height="match_parent"
         android:layout_gravity="start"
-        android:background="@android:color/white"
+        android:background="@drawable/bg_sidebar_translucent"
         android:orientation="vertical">
 
         <LinearLayout
@@ -149,6 +175,13 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="退出登录" />
+
+            <Button
+                android:id="@+id/menu_admin_users"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="管理用户"
+                android:visibility="gone" />
 
             <Button
                 android:id="@+id/menu_item1"

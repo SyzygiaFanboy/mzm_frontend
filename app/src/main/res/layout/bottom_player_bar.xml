@@ -15,7 +15,7 @@
         android:layout_height="44dp"
         android:layout_marginEnd="12dp"
         android:scaleType="centerCrop"
-        android:src="@drawable/default_cover" />
+        android:src="@drawable/default_playlist_cover" />
 
     <!-- 音乐信息区域 -->
     <LinearLayout

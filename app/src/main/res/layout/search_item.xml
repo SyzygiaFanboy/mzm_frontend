@@ -4,33 +4,45 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:padding="8dp">
+    android:padding="10dp"
+    android:background="#22000000">
 
     <CheckBox
         android:id="@+id/cb_select"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:buttonTint="?attr/colorOnSurface"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"/>
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"/>
 
     <TextView
         android:id="@+id/tv_songname"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="10dp"
+        android:ellipsize="end"
+        android:maxLines="1"
         app:layout_constraintStart_toEndOf="@id/cb_select"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/tv_playcount"
         app:layout_constraintTop_toTopOf="parent"
-        android:textSize="16sp"/>
+        android:textColor="?attr/colorOnSurface"
+        android:textSize="15sp"/>
 
     <TextView
         android:id="@+id/tv_musician"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="10dp"
+        android:ellipsize="end"
+        android:maxLines="1"
         app:layout_constraintStart_toStartOf="@id/tv_songname"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/tv_playcount"
         app:layout_constraintTop_toBottomOf="@id/tv_songname"
-        android:textSize="14sp"
-        android:textColor="#666"/>
+        android:textSize="12sp"
+        android:textColor="?attr/colorOnSurfaceVariant"/>
 
     <TextView
         android:id="@+id/tv_playcount"
@@ -39,6 +51,8 @@
         android:text="热度：0"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="parent"
-        android:layout_marginEnd="8dp"/>
+        android:layout_marginEnd="8dp"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textSize="12sp"/>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

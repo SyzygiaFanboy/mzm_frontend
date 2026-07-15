@@ -58,7 +58,7 @@ public class SelectedSongAdapter extends RecyclerView.Adapter<SelectedSongAdapte
             MusicCoverUtils.loadCoverSmart(filePath, song.getCoverUrl(), context, holder.ivSongIcon);
         } else {
             // 如果都没有，显示默认封面
-            holder.ivSongIcon.setImageResource(R.drawable.default_cover);
+            holder.ivSongIcon.setImageResource(R.drawable.default_playlist_cover);
         }
         
         holder.btnRemove.setOnClickListener(v -> {

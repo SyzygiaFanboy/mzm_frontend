@@ -11,6 +11,7 @@ public class Songinf {
     private int songduration;
     @SerializedName("playcount")
     private int playCount;
+    private String coverUrl;
     private boolean selected;
 
     // 必须有空参构造函数（用于 Gson 解析）
@@ -72,5 +73,13 @@ public class Songinf {
 
     public void setPlayCount(int playCount) {
         this.playCount = playCount;
+    }
+
+    public String getCoverUrl() {
+        return coverUrl;
+    }
+
+    public void setCoverUrl(String coverUrl) {
+        this.coverUrl = coverUrl;
     }
 }

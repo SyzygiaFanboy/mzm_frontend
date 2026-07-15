@@ -11,13 +11,12 @@ import android.os.Build;
 public final class ServerConfig {
     private ServerConfig() {}
 
-    // Your PC LAN address for real devices on the same Wi‑Fi.
-    // If you only use emulator, you can ignore this.
     private static final String LAN_HOST = "192.168.31.83";
+    private static final String CLOUD_HOST = "8.138.164.232";
     private static final int PORT = 8080;
-    private static final String CONTEXT = "houduan2";
+    private static final String CONTEXT = "";
 
-    /** If you run `adb reverse tcp:8080 tcp:8080`, emulator can use localhost. */
+    private static final boolean USE_CLOUD = true;
     private static final boolean EMULATOR_USE_ADB_REVERSE = true;
 
     public static String baseUrl() {
@@ -25,6 +24,9 @@ public final class ServerConfig {
     }
 
     public static String appBaseUrl() {
+        if (CONTEXT == null || CONTEXT.trim().isEmpty()) {
+            return baseUrl();
+        }
         return "http://" + host() + ":" + PORT + "/" + CONTEXT + "/";
     }
 
@@ -38,6 +40,9 @@ public final class ServerConfig {
     }
 
     private static String host() {
+        if (USE_CLOUD) {
+            return CLOUD_HOST;
+        }
         if (isEmulator()) {
             // Prefer adb reverse to avoid emulator networking/firewall surprises.
             return EMULATOR_USE_ADB_REVERSE ? "127.0.0.1" : "10.0.2.2";

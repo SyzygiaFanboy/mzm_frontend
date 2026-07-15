@@ -41,6 +41,19 @@
 
         <!-- 分享歌单按钮 -->
         <ImageButton
+            android:id="@+id/btnPlaylistSearch"
+            android:layout_width="30dp"
+            android:layout_height="48dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginEnd="2dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="搜索歌单内歌曲"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_search"
+            app:layout_constraintEnd_toStartOf="@+id/sharePlaylist"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <ImageButton
             android:id="@+id/sharePlaylist"
             android:layout_width="30dp"
             android:layout_height="48dp"
@@ -75,7 +88,7 @@
             android:alpha="0.97"
             android:contentDescription="专辑封面"
             android:scaleType="centerCrop"
-            android:src="@drawable/default_cover"
+            android:src="@drawable/default_playlist_cover"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/toolbar" />
 
@@ -87,7 +100,7 @@
             android:layout_marginEnd="16dp"
             android:ellipsize="end"
             android:maxLines="1"
-            android:text="默认歌单"
+            android:text="未选择歌单"
             android:textSize="20sp"
             android:textStyle="bold"
             app:layout_constraintEnd_toEndOf="parent"

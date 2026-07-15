@@ -6,6 +6,7 @@ import android.os.AsyncTask;
 import android.util.Log;
 
 import com.example.myapplication.model.SelectedSong;
+import com.example.myapplication.utils.BiliAudioDownloadHelper;
 
 import java.io.DataOutputStream;
 import java.io.File;
@@ -117,6 +118,16 @@ public class UploadTask extends AsyncTask<SelectedSong, Integer, String> {
                 outputStream.writeBytes(String.valueOf(song.getDuration() / 1000));
                 outputStream.writeBytes(lineEnd);
 
+                String coverUrl = song.getCoverUrl();
+                if (coverUrl != null && !coverUrl.trim().isEmpty()) {
+                    String encodedCover = java.net.URLEncoder.encode(coverUrl, "UTF-8");
+                    outputStream.writeBytes(twoHyphens + boundary + lineEnd);
+                    outputStream.writeBytes("Content-Disposition: form-data; name=\"coverUrl\"" + lineEnd);
+                    outputStream.writeBytes(lineEnd);
+                    outputStream.writeBytes(encodedCover);
+                    outputStream.writeBytes(lineEnd);
+                }
+
             } catch (Exception e) {
                 Log.e(TAG, "编码失败", e);
                 throw new IOException("字符编码失败: " + e.getMessage());
@@ -126,17 +137,25 @@ public class UploadTask extends AsyncTask<SelectedSong, Integer, String> {
             InputStream inputStream = null;
             String fileName = "unknown.mp3";
             long fileSize = 0;
+            File tempBiliFile = null;
 
             try {
                 // 优先使用文件路径
                 if (song.getFilePath() != null && !song.getFilePath().isEmpty()) {
-                    File file = new File(song.getFilePath());
-                    if (file.exists()) {
-                        inputStream = new FileInputStream(file);
-                        fileName = file.getName();
-                        fileSize = file.length();
+                    if (BiliAudioDownloadHelper.isBiliPath(song.getFilePath())) {
+                        tempBiliFile = BiliAudioDownloadHelper.downloadToTempFile(context, song.getFilePath(), song.getSongName());
+                        inputStream = new FileInputStream(tempBiliFile);
+                        fileName = tempBiliFile.getName();
+                        fileSize = tempBiliFile.length();
                     } else {
-                        Log.w(TAG, "文件路径无效，尝试使用URI: " + song.getFilePath());
+                        File file = new File(song.getFilePath());
+                        if (file.exists()) {
+                            inputStream = new FileInputStream(file);
+                            fileName = file.getName();
+                            fileSize = file.length();
+                        } else {
+                            Log.w(TAG, "文件路径无效，尝试使用URI: " + song.getFilePath());
+                        }
                     }
                 }
 
@@ -174,6 +193,9 @@ public class UploadTask extends AsyncTask<SelectedSong, Integer, String> {
             } finally {
                 if (inputStream != null) {
                     inputStream.close();
+                }
+                if (tempBiliFile != null && tempBiliFile.exists()) {
+                    tempBiliFile.delete();
                 }
             }
 

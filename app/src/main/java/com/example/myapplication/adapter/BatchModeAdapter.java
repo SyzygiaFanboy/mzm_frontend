@@ -96,7 +96,7 @@ public class BatchModeAdapter extends android.widget.BaseAdapter {
         }
 
         if (filePath == null || filePath.isEmpty()) {
-            holder.ivCover.setImageResource(R.drawable.default_cover);
+            holder.ivCover.setImageResource(R.drawable.default_playlist_cover);
         } else {
             MusicCoverUtils.loadCoverSmart(filePath, coverUrl, context, holder.ivCover);
         }

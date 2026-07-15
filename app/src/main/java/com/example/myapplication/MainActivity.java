@@ -50,6 +50,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
+import androidx.constraintlayout.widget.ConstraintLayout;
+import androidx.constraintlayout.widget.ConstraintSet;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -58,9 +60,13 @@ import androidx.lifecycle.ViewModelProvider;
 import com.example.myapplication.adapter.BatchModeAdapter;
 import com.example.myapplication.adapter.BiliVideoAdapter;
 import com.example.myapplication.model.MusicViewModel;
+import com.example.myapplication.model.Playlist;
 import com.example.myapplication.model.Song;
+import com.example.myapplication.utils.BiliAudioDownloadHelper;
+import com.example.myapplication.utils.BiliLinkParser;
 import com.example.myapplication.utils.ImageCacheManager;
 import com.example.myapplication.utils.SongDeletionUtils;
+import com.example.myapplication.utils.UiAutoRefreshHelper;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -98,6 +104,9 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSongCompletionListener {
+    private static final int BILI_FAV_MAX_DURATION_SECONDS = 30 * 60;
+    private static final int REQUEST_CODE_BILI_FAV_PICKER = 2207;
+    private static final int REQUEST_CODE_BILI_SHARE_PICKER = 2208;
 
     // 修改默认歌曲构造，避免硬编码路径，这块大概率以后要改
     private Song song = new Song(0, "暂无歌曲", "", "");
@@ -119,6 +128,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     private int marqueeExtraPaddingRightPx = 0;
     private int marqueeOriginalPaddingRightPx = 0;
     private String lastCurrentSongDisplayText = null;
+    private final UiAutoRefreshHelper visibleUiAutoRefresh = new UiAutoRefreshHelper(1200L, this::refreshVisibleUiIfNeeded);
 
     private final MusicPlayer.OnPlaybackStateChangeListener playlistPagePlaybackListener = new MusicPlayer.OnPlaybackStateChangeListener() {
         @Override
@@ -164,6 +174,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     private static final int REQUEST_CODE_SEARCH = 1001; // 请求码
 
     private AtomicBoolean isSyncActive = new AtomicBoolean(false);
+    private boolean isPlaylistEditLocked = false;
 
     // 添加B站音乐的回调接口
     public interface biliCallback<T> {
@@ -235,7 +246,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
         // 获取全局MusicPlayer实例
         musicPlayer = ((MyApp) getApplication()).getMusicPlayer();
-        musicPlayer.setOnSongCompletionListener(this);
 
         // 应用播放页面背景
         applyPlaybackBackground();
@@ -273,6 +283,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
         listview.setChoiceMode(ListView.CHOICE_MODE_SINGLE);
         listview.setOnItemClickListener(new MusicListItemClickListener());
+        listview.setOnItemLongClickListener((parent, view, position, id) -> handleSongLongClick(position));
 
         // 根据当前播放状态设置UI
         if (isCurrentlyPlaying) {
@@ -293,15 +304,33 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
         // 获取要显示的歌单
         currentPlaylist = getIntent().getStringExtra("playlist");
-        if (currentPlaylist == null)
-            currentPlaylist = "默认歌单";
+        if (currentPlaylist == null) {
+            currentPlaylist = "";
+        }
 
         if (playlistTitle != null) {
-            playlistTitle.setText(currentPlaylist);
+            playlistTitle.setText(currentPlaylist.isEmpty() ? "未选择歌单" : currentPlaylist);
         }
 
         // 加载歌单但不影响播放状态
-        loadMusicList(listview, currentPlaylist);
+        if (!currentPlaylist.isEmpty()) {
+            loadMusicList(listview, currentPlaylist);
+            updatePlaylistEditLockUi();
+        } else {
+            musicList.clear();
+            if (listview.getAdapter() instanceof BatchModeAdapter) {
+                ((BatchModeAdapter) listview.getAdapter()).setData(musicList);
+            } else {
+                BatchModeAdapter emptyAdapter = new BatchModeAdapter(
+                        this,
+                        musicList,
+                        R.layout.playlist_layout,
+                        new String[]{"index", "name", "TimeDuration", "isSelected"},
+                        new int[]{R.id.seq, R.id.musicname, R.id.musiclength, R.id.cbSelect});
+                listview.setAdapter(emptyAdapter);
+            }
+            updateNavButtons();
+        }
 
         refreshCurrentSongBar();
         refreshHeaderCover();
@@ -462,6 +491,9 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         ImageButton btnBatchDelete = findViewById(R.id.btnBatchDelete);
         btnBatchDelete.setVisibility(View.GONE);
         btnBatchDelete.setOnClickListener(v -> {
+            if (isPlaylistEditLocked) {
+                return;
+            }
             List<Integer> positionsToDelete = new ArrayList<>();
             List<Song> songsToDelete = new ArrayList<>();
             for (int i = 0; i < musicList.size(); i++) {
@@ -646,6 +678,9 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         });
 
         btnMoveUp.setOnClickListener(v -> {
+            if (isPlaylistEditLocked) {
+                return;
+            }
             if (selectedPosition != -1 && selectedPosition > 0) {
                 // 上移逻辑
                 Collections.swap(musicList, selectedPosition, selectedPosition - 1);
@@ -670,6 +705,9 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         });
 
         btnMoveDown.setOnClickListener(v -> {
+            if (isPlaylistEditLocked) {
+                return;
+            }
             if (selectedPosition != -1 && selectedPosition < musicList.size() - 1) {
                 // 下移逻辑
                 Collections.swap(musicList, selectedPosition, selectedPosition + 1);
@@ -706,6 +744,11 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             showSharePlaylistDialog();
         });
 
+        ImageButton playlistSearchBtn = findViewById(R.id.btnPlaylistSearch);
+        if (playlistSearchBtn != null) {
+            playlistSearchBtn.setOnClickListener(v -> showPlaylistSearchDialog());
+        }
+
         // 添加按钮
         ImageButton Addbtn = findViewById(R.id.addMusic);
         Addbtn.setOnClickListener(v -> {
@@ -723,129 +766,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true); // 允许多选
                     startActivityForResult(intent, PICK_MUSIC_REQUEST);
                 } else if (which == 1) {
-                    // 添加B站音乐，用回调处理需要的值
-                    // 先处理用户输入的数据（处理移动端短链、bv或av号等）
-                    showBiliDialog(bv -> {
-                        // 按取消返回 null
-                        if (bv == null) {
-                            return;
-                        }
-
-                        try {
-                            // 进度对话框
-                            runOnUiThread(() -> {
-                                showProgressDialog();
-                                dialogProgressBar.setIndeterminate(true); // 设置为不确定进度模式
-                                dialogMessage.setText("正在获取B站音频...");
-                            });
-
-                            // 获取音频流函数
-                            getBiliMusic(bv, this, result -> runOnUiThread(() -> {
-                                if (result != null) {
-                                    String title = (String) result.get("title");
-                                    File f = (File) result.get("file");
-                                    String coverUrl = (String) result.get("coverUrl");
-                                    String path = f.getAbsolutePath();
-
-                                    // 获取文件信息，用于转化成song
-                                    MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-                                    retriever.setDataSource(path);
-                                    String durationStr = retriever
-                                            .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
-                                    int duration = Integer.parseInt(durationStr) / 1000;
-
-                                    // 封装、添加到歌单
-                                    Song newSong = new Song(duration, title, path, currentPlaylist);
-                                    newSong.setCoverUrl(coverUrl); // 设置封面URL
-                                    addSongToPlaylist(newSong);
-                                    updatePlaylistCover(currentPlaylist);
-                                    MusicLoader.appendMusic(this, newSong);
-                                    ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
-                                    refreshHeaderCover();
-                                    updateNavButtons(); // 添加这行来启用按钮
-                                    Toast.makeText(MainActivity.this, "已添加到歌单", Toast.LENGTH_SHORT).show();
-                                } else {
-                                    Toast.makeText(MainActivity.this, "获取B站音乐失败", Toast.LENGTH_SHORT).show();
-                                    Log.e("BiliMusic", "获取B站音乐失败，bv: " + bv);
-                                }
-                                dismissProgressDialog();
-                            }));
-                        } catch (Exception e) {
-                            runOnUiThread(this::dismissProgressDialog);
-                            Toast.makeText(MainActivity.this, "无效的输入：" + bv, Toast.LENGTH_SHORT).show();
-                        }
-                    });
+                    Intent intent = new Intent(MainActivity.this, BiliSharePickerActivity.class);
+                    startActivityForResult(intent, REQUEST_CODE_BILI_SHARE_PICKER);
                 } else if (which == 2) {
-                    // 添加B站收藏夹音乐
-                    showBiliCollectionDialog(list -> runOnUiThread(() -> {
-                        if (list == null) {
-                            return;
-                        }
-                        if (list.isEmpty()) {
-                            Toast.makeText(MainActivity.this, "未获取到收藏夹信息", Toast.LENGTH_SHORT).show();
-                            return;
-                        }
-
-                        // 进度对话框
-                        AtomicInteger successCnt = new AtomicInteger();
-                        AtomicInteger failCnt = new AtomicInteger();
-                        runOnUiThread(() -> {
-                            showProgressDialog();
-                            dialogProgressBar.setIndeterminate(false); // 设置为确定进度模式
-                            dialogProgressBar.setProgress(0);
-                            dialogMessage.setText("正在获取B站音频...");
-                        });
-
-                        for (String bv : list) {
-                            getBiliMusic(bv, this, result -> runOnUiThread(() -> {
-                                if (result != null && !result.isEmpty()) {
-                                    String title = (String) result.get("title");
-                                    File f = (File) result.get("file");
-                                    String coverUrl = (String) result.get("coverUrl");
-                                    String path = f.getAbsolutePath();
-
-                                    // 获取文件信息，用于转化成song
-                                    MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-                                    retriever.setDataSource(path);
-                                    String durationStr = retriever
-                                            .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
-                                    int duration = Integer.parseInt(durationStr) / 1000;
-
-                                    // 封装、添加到歌单
-                                    Song newSong = new Song(duration, title, path, currentPlaylist);
-                                    newSong.setCoverUrl(coverUrl); // 设置封面URL
-                                    addSongToPlaylist(newSong);
-                                    updatePlaylistCover(currentPlaylist);
-                                    MusicLoader.appendMusic(this, newSong);
-                                    ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
-                                    refreshHeaderCover();
-                                    updateNavButtons(); // 添加这行来启用按钮
-
-                                    // 更新进度条
-                                    successCnt.getAndIncrement();
-                                    int progress = successCnt.get() * 100 / list.size();
-                                    dialogProgressBar.setProgress(progress);
-                                    dialogMessage.setText("正在获取B站音频... (" + successCnt.get() + "/" + list.size() + ")");
-                                } else {
-                                    failCnt.getAndIncrement();
-                                    dismissProgressDialog();
-                                    Toast.makeText(MainActivity.this, "获取B站音乐失败", Toast.LENGTH_SHORT).show();
-                                    Log.e("BiliCollection", "返回值为空，bv: " + bv);
-                                }
-
-                                // 放在回调里面，不然显示不出来
-                                if (successCnt.get() >= list.size()) {
-                                    dismissProgressDialog();
-                                    Toast.makeText(MainActivity.this, "已添加到歌单", Toast.LENGTH_SHORT).show();
-                                }
-                            }));
-                            // 检查是否已经失败并退出
-                            if (failCnt.get() > 0) {
-                                runOnUiThread(this::dismissProgressDialog);
-                                break;
-                            }
-                        }
-                    }));
+                    Intent intent = new Intent(MainActivity.this, BiliFavPickerActivity.class);
+                    intent.putExtra(BiliFavPickerActivity.EXTRA_CURRENT_PLAYLIST, currentPlaylist);
+                    startActivityForResult(intent, REQUEST_CODE_BILI_FAV_PICKER);
                 } else if (which == 3) {
                     // 搜索在线音乐
                     Intent intent = new Intent(MainActivity.this, SearchActivity.class);
@@ -892,23 +818,24 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         Log.d("MainActivity", "收到播放完成回调");
         runOnUiThread(() -> {
             try {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
                 if (musicPlayer.isSongChanging()) {
                     return;
                 }
                 if (isSongChanging) {
                     return;
                 }
-                if (musicPlayer.getPlayQueueSize() > 0) {
-                    musicPlayer.playNextInQueue();
-                } else if (!musicList.isEmpty()) {
+                if (musicPlayer.getPlayQueueSize() <= 0 && !musicList.isEmpty()) {
                     playNextSong();
                 }
-                new Handler().postDelayed(() -> {
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
                     updateAllPlayButtons();
                     refreshCurrentSongBar();
                 }, 100);
             } catch (IOException e) {
-                throw new RuntimeException(e);
+                Log.e("MainActivity", "播放完成后切换下一首失败", e);
             }
         });
     }
@@ -933,6 +860,56 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         int seconds = (milliseconds / 1000) % 60;
         int minutes = (milliseconds / (1000 * 60)) % 60;
         return String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds);
+    }
+
+    private boolean handleSongLongClick(int position) {
+        if (position < 0 || position >= musicList.size()) {
+            return false;
+        }
+        Song s = Song.fromMap(musicList.get(position));
+        if (s == null) {
+            return false;
+        }
+        String original = buildBiliOriginalLink(s);
+        if (original == null || original.isEmpty()) {
+            return false;
+        }
+
+        String[] options = {"复制B站原始链接"};
+        new AlertDialog.Builder(this)
+                .setTitle("操作")
+                .setItems(options, (dialog, which) -> {
+                    if (which == 0) {
+                        android.content.ClipboardManager clipboard = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                        android.content.ClipData clip = android.content.ClipData.newPlainText("bili_link", original);
+                        if (clipboard != null) {
+                            clipboard.setPrimaryClip(clip);
+                        }
+                        Toast.makeText(this, "已复制链接", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("取消", null)
+                .show();
+        return true;
+    }
+
+    private String buildBiliOriginalLink(Song song) {
+        if (song == null) {
+            return null;
+        }
+        String fp = song.getFilePath();
+        if (fp == null || fp.isEmpty()) {
+            return null;
+        }
+        String raw = fp;
+        if (raw.toLowerCase(Locale.ROOT).startsWith("bili://")) {
+            raw = raw.substring("bili://".length());
+        }
+        String bvid = com.example.myapplication.utils.BiliLinkParser.extractBvid(raw);
+        if (bvid == null || bvid.isEmpty()) {
+            return null;
+        }
+        return "https://www.bilibili.com/video/" + bvid;
     }
 
     private void deleteAllSongs() {
@@ -1004,8 +981,294 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         Toast.makeText(this, "图片缓存已清理", Toast.LENGTH_SHORT).show();
     }
 
+    private boolean isBiliBoundPlaylist(String playlistName) {
+        if (playlistName == null || playlistName.isEmpty()) {
+            return false;
+        }
+        SharedPreferences prefs = getSharedPreferences(PlaylistListActivity.PREFS, MODE_PRIVATE);
+        String json = prefs.getString(PlaylistListActivity.KEY_PLAYLISTS, null);
+        if (json == null || json.isEmpty()) {
+            return false;
+        }
+        try {
+            List<Playlist> list = Playlist.fromJson(json);
+            if (list == null) {
+                return false;
+            }
+            for (Playlist p : list) {
+                if (p != null && playlistName.equals(p.getName())) {
+                    return p.isBiliBound();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
+    private void updatePlaylistEditLockUi() {
+        isPlaylistEditLocked = isBiliBoundPlaylist(currentPlaylist);
+
+        View btnAddMusic = findViewById(R.id.addMusic);
+        View btnSharePlaylist = findViewById(R.id.sharePlaylist);
+        View btnPlaylistSearch = findViewById(R.id.btnPlaylistSearch);
+        View btnBatchSelect = findViewById(R.id.btnBatchSelect);
+        View btnMoveUp = findViewById(R.id.btnMoveUp);
+        View btnMoveDown = findViewById(R.id.btnMoveDown);
+        View btnBatchDelete = findViewById(R.id.btnBatchDelete);
+
+        if (isPlaylistEditLocked) {
+            if (isBatchMode) {
+                isBatchMode = false;
+                if (listview != null && listview.getAdapter() instanceof BatchModeAdapter) {
+                    ((BatchModeAdapter) listview.getAdapter()).setBatchMode(false);
+                }
+            }
+            selectedPositions.clear();
+            isAllSelected = false;
+            if (cbSelectAll != null) {
+                cbSelectAll.setChecked(false);
+                cbSelectAll.setVisibility(View.GONE);
+            }
+            if (btnBatchDelete != null) {
+                btnBatchDelete.setVisibility(View.GONE);
+            }
+            if (btnMoveUp != null) {
+                btnMoveUp.setVisibility(View.GONE);
+            }
+            if (btnMoveDown != null) {
+                btnMoveDown.setVisibility(View.GONE);
+            }
+            if (btnBatchSelect != null) {
+                btnBatchSelect.setVisibility(View.GONE);
+            }
+            if (btnAddMusic != null) {
+                btnAddMusic.setVisibility(View.GONE);
+            }
+            if (btnSharePlaylist != null) {
+                btnSharePlaylist.setVisibility(View.GONE);
+            }
+            if (btnPlaylistSearch != null) {
+                btnPlaylistSearch.setVisibility(View.VISIBLE);
+            }
+            if (listview != null) {
+                listview.clearChoices();
+            }
+            if (listview != null && listview.getAdapter() instanceof BaseAdapter) {
+                ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
+            }
+            updateTopActionButtonsLayout(true);
+            return;
+        }
+
+        if (btnAddMusic != null) {
+            btnAddMusic.setVisibility(View.VISIBLE);
+        }
+        if (btnSharePlaylist != null) {
+            btnSharePlaylist.setVisibility(View.VISIBLE);
+        }
+        if (btnPlaylistSearch != null) {
+            btnPlaylistSearch.setVisibility(View.VISIBLE);
+        }
+        if (btnBatchSelect != null) {
+            btnBatchSelect.setVisibility(View.VISIBLE);
+        }
+        if (btnMoveUp != null) {
+            btnMoveUp.setVisibility(isBatchMode ? View.GONE : View.VISIBLE);
+        }
+        if (btnMoveDown != null) {
+            btnMoveDown.setVisibility(isBatchMode ? View.GONE : View.VISIBLE);
+        }
+        if (btnBatchDelete != null) {
+            btnBatchDelete.setVisibility(isBatchMode ? View.VISIBLE : View.GONE);
+        }
+        if (cbSelectAll != null) {
+            cbSelectAll.setVisibility(isBatchMode ? View.VISIBLE : View.GONE);
+        }
+        updateTopActionButtonsLayout(false);
+    }
+
+    private void updateTopActionButtonsLayout(boolean locked) {
+        ConstraintLayout root = findViewById(R.id.main);
+        View btnSearch = findViewById(R.id.btnPlaylistSearch);
+        if (root == null || btnSearch == null) {
+            return;
+        }
+        ConstraintSet set = new ConstraintSet();
+        set.clone(root);
+        set.clear(R.id.btnPlaylistSearch, ConstraintSet.START);
+        set.clear(R.id.btnPlaylistSearch, ConstraintSet.END);
+        if (locked) {
+            set.connect(R.id.btnPlaylistSearch, ConstraintSet.END, ConstraintSet.PARENT_ID, ConstraintSet.END, dpToPx(16));
+        } else {
+            set.connect(R.id.btnPlaylistSearch, ConstraintSet.END, R.id.sharePlaylist, ConstraintSet.START, dpToPx(2));
+        }
+        set.applyTo(root);
+    }
+
+    private int dpToPx(int dp) {
+        return Math.round(dp * getResources().getDisplayMetrics().density);
+    }
+
+    private void showPlaylistSearchDialog() {
+        List<Map<String, Object>> sourceSongs = new ArrayList<>(musicList);
+        if (sourceSongs.isEmpty()) {
+            Toast.makeText(this, "当前歌单暂无歌曲", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int padding = dpToPx(16);
+        layout.setPadding(padding, padding, padding, dpToPx(8));
+
+        EditText etKeyword = new EditText(this);
+        etKeyword.setHint("输入歌曲名、歌手名或关键字");
+        layout.addView(etKeyword, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+
+        ListView resultListView = new ListView(this);
+        LinearLayout.LayoutParams listParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dpToPx(320)
+        );
+        listParams.topMargin = dpToPx(12);
+        layout.addView(resultListView, listParams);
+
+        TextView emptyView = new TextView(this);
+        emptyView.setText("未找到匹配歌曲");
+        emptyView.setPadding(0, dpToPx(12), 0, dpToPx(12));
+        emptyView.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
+        layout.addView(emptyView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        resultListView.setEmptyView(emptyView);
+
+        List<String> labels = new ArrayList<>();
+        List<Integer> matchedIndices = new ArrayList<>();
+        android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<>(
+                this,
+                android.R.layout.simple_list_item_1,
+                labels
+        );
+        resultListView.setAdapter(adapter);
+
+        Runnable refreshResults = () -> {
+            String keyword = etKeyword.getText() != null ? etKeyword.getText().toString().trim().toLowerCase(Locale.ROOT) : "";
+            labels.clear();
+            matchedIndices.clear();
+            for (int i = 0; i < sourceSongs.size(); i++) {
+                Map<String, Object> songMap = sourceSongs.get(i);
+                Song candidate = Song.fromMap(songMap);
+                if (candidate == null) {
+                    continue;
+                }
+                String name = candidate.getName() != null ? candidate.getName() : "";
+                String filePath = candidate.getFilePath() != null ? candidate.getFilePath() : "";
+                String haystack = (name + " " + filePath).toLowerCase(Locale.ROOT);
+                if (!keyword.isEmpty() && !haystack.contains(keyword)) {
+                    continue;
+                }
+                labels.add(name);
+                matchedIndices.add(i);
+            }
+            adapter.notifyDataSetChanged();
+        };
+
+        refreshResults.run();
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("歌单内搜索")
+                .setView(layout)
+                .setNegativeButton("关闭", null)
+                .create();
+
+        resultListView.setOnItemClickListener((parent, view, position, id) -> {
+            if (position < 0 || position >= matchedIndices.size()) {
+                return;
+            }
+            int targetIndex = matchedIndices.get(position);
+            selectedPosition = targetIndex;
+            if (listview != null) {
+                listview.setItemChecked(targetIndex, true);
+                listview.smoothScrollToPosition(targetIndex);
+            }
+            Toast.makeText(this, "已定位到该歌曲", Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+        });
+
+        etKeyword.addTextChangedListener(new android.text.TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                refreshResults.run();
+            }
+
+            @Override
+            public void afterTextChanged(android.text.Editable s) {
+            }
+        });
+
+        dialog.show();
+    }
+
+    private void appendResolvedBiliSongToCurrentPlaylist(Map<String, Object> result, @Nullable String fallbackTitle,
+                                                         @Nullable String fallbackCoverUrl) {
+        if (result == null || result.isEmpty()) {
+            return;
+        }
+        String title = (String) result.get("title");
+        if (title == null || title.trim().isEmpty()) {
+            title = fallbackTitle;
+        }
+        if (title == null || title.trim().isEmpty()) {
+            title = "B站音频";
+        }
+
+        String path = (String) result.get("filePath");
+        if (path == null || path.trim().isEmpty()) {
+            Object bvid = result.get("bvid");
+            Object cid = result.get("cid");
+            long cidValue = cid instanceof Number ? ((Number) cid).longValue() : -1L;
+            path = BiliAudioDownloadHelper.buildPlaceholderPath(bvid != null ? String.valueOf(bvid) : null, cidValue);
+        }
+        if (path == null || path.trim().isEmpty()) {
+            return;
+        }
+
+        int duration = 0;
+        Object durationObj = result.get("durationSec");
+        if (durationObj instanceof Number) {
+            duration = Math.max(0, ((Number) durationObj).intValue());
+        }
+
+        String coverUrl = (String) result.get("coverUrl");
+        if (coverUrl == null || coverUrl.trim().isEmpty()) {
+            coverUrl = fallbackCoverUrl;
+        }
+
+        Song newSong = new Song(duration, title, path, currentPlaylist);
+        newSong.setCoverUrl(coverUrl);
+        addSongToPlaylist(newSong);
+        updatePlaylistCover(currentPlaylist);
+        MusicLoader.appendMusic(this, newSong);
+        if (listview != null && listview.getAdapter() != null) {
+            ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();
+        }
+        refreshHeaderCover();
+        updateNavButtons();
+    }
+
     // 字面意思
     private void toggleBatchMode() {
+        if (isPlaylistEditLocked) {
+            return;
+        }
         isBatchMode = !isBatchMode;
         BatchModeAdapter adapter = (BatchModeAdapter) listview.getAdapter();
         adapter.setBatchMode(isBatchMode);
@@ -1386,7 +1649,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         }
     }
 
-    // 图片缩放方法（重命名以适应新用途）
+    // 图片缩放方法
     private Bitmap createScaledBitmapForImageView(Bitmap originalBitmap, int targetWidth, int targetHeight) {
         int originalWidth = originalBitmap.getWidth();
         int originalHeight = originalBitmap.getHeight();
@@ -1426,7 +1689,9 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     @Override
     protected void onPause() {
         super.onPause();
+        visibleUiAutoRefresh.stop();
         if (musicPlayer != null) {
+            musicPlayer.setOnSongCompletionListener(null);
             musicPlayer.removeOnPlaybackStateChangeListener(playlistPagePlaybackListener);
         }
         // 暂停时不关闭进度对话框，但记录状态
@@ -1435,6 +1700,9 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     @Override
     protected void onResume() {
         super.onResume();
+        if (musicPlayer != null) {
+            musicPlayer.setOnSongCompletionListener(this);
+        }
         // 每次返回时重新应用背景，以防用户更改了设置
         applyPlaybackBackground();
 
@@ -1465,7 +1733,15 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
         globalManager.attachToActivity(this);
         globalManager.forceRefresh();
+        updatePlaylistEditLockUi();
+        visibleUiAutoRefresh.start();
         // 恢复时检查进度对话框状态
+    }
+
+    private void refreshVisibleUiIfNeeded() {
+        refreshCurrentSongBar();
+        GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
+        globalManager.forceRefresh();
     }
 
     private void refreshCurrentSongBar() {
@@ -1660,16 +1936,22 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     protected void onRestoreInstanceState(@NonNull Bundle savedInstanceState) {
         super.onRestoreInstanceState(savedInstanceState);
         // 恢复状态
-        currentPlaylist = savedInstanceState.getString("currentPlaylist", "默认歌单");
+        currentPlaylist = savedInstanceState.getString("currentPlaylist", "");
         boolean wasDownloading = savedInstanceState.getBoolean("isDownloading", false);
         if (wasDownloading) {
             // 如果之前在下载，重新加载歌单
-            loadMusicList(listview, currentPlaylist);
+            if (currentPlaylist != null && !currentPlaylist.isEmpty()) {
+                loadMusicList(listview, currentPlaylist);
+            }
         }
     }
 
     @Override
     protected void onDestroy() {
+        visibleUiAutoRefresh.stop();
+        if (musicPlayer != null) {
+            musicPlayer.setOnSongCompletionListener(null);
+        }
         super.onDestroy();
         // 确保进度对话框被正确关闭
         dismissProgressDialog();
@@ -1681,6 +1963,23 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == REQUEST_CODE_BILI_SHARE_PICKER && resultCode == RESULT_OK && data != null) {
+            ArrayList<String> ids = data.getStringArrayListExtra(BiliSharePickerActivity.EXTRA_SELECTED_IDS);
+            ArrayList<String> titles = data.getStringArrayListExtra(BiliSharePickerActivity.EXTRA_SELECTED_TITLES);
+            ArrayList<String> covers = data.getStringArrayListExtra(BiliSharePickerActivity.EXTRA_SELECTED_COVERS);
+            long[] epIds = data.getLongArrayExtra(BiliSharePickerActivity.EXTRA_SELECTED_EPIDS);
+            if (ids != null && !ids.isEmpty()) {
+                downloadBiliShareSelected(ids, titles, covers, epIds);
+            }
+        }
+
+        if (requestCode == REQUEST_CODE_BILI_FAV_PICKER && resultCode == RESULT_OK && data != null) {
+            ArrayList<String> bvids = data.getStringArrayListExtra(BiliFavPickerActivity.EXTRA_SELECTED_BVIDS);
+            if (bvids != null && !bvids.isEmpty()) {
+                downloadBiliFavSelected(bvids);
+            }
+        }
 
         // 处理“搜索并添加在线音乐”返回
         if (requestCode == REQUEST_CODE_SEARCH && resultCode == RESULT_OK) {
@@ -1727,6 +2026,112 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 copyAndAddMusicFiles(uriList);
             }
         }
+    }
+
+    private void downloadBiliFavSelected(List<String> bvids) {
+        AtomicInteger successCnt = new AtomicInteger();
+        AtomicInteger failCnt = new AtomicInteger();
+        runOnUiThread(() -> {
+            showProgressDialog();
+            dialogProgressBar.setIndeterminate(false);
+            dialogProgressBar.setProgress(0);
+            dialogMessage.setText("正在添加B站音频...");
+        });
+
+        for (String bv : bvids) {
+            getBiliMusic(bv, this, true, result -> runOnUiThread(() -> {
+                if (result != null && !result.isEmpty()) {
+                    appendResolvedBiliSongToCurrentPlaylist(result, null, null);
+
+                    successCnt.getAndIncrement();
+                    int progress = successCnt.get() * 100 / bvids.size();
+                    dialogProgressBar.setProgress(progress);
+                    dialogMessage.setText("正在添加B站音频... (" + successCnt.get() + "/" + bvids.size() + ")");
+                } else {
+                    failCnt.getAndIncrement();
+                    Toast.makeText(MainActivity.this, "获取B站音乐失败", Toast.LENGTH_SHORT).show();
+                }
+
+                if (successCnt.get() + failCnt.get() >= bvids.size()) {
+                    dismissProgressDialog();
+                    Toast.makeText(MainActivity.this, "已添加到歌单", Toast.LENGTH_SHORT).show();
+                }
+            }));
+        }
+    }
+
+    private void downloadBiliShareSelected(ArrayList<String> ids, @Nullable ArrayList<String> titles,
+                                          @Nullable ArrayList<String> covers, @Nullable long[] epIds) {
+        AtomicInteger completed = new AtomicInteger();
+        AtomicInteger successCnt = new AtomicInteger();
+        AtomicInteger failCnt = new AtomicInteger();
+        int total = ids.size();
+
+        runOnUiThread(() -> {
+            showProgressDialog();
+            dialogProgressBar.setIndeterminate(false);
+            dialogProgressBar.setProgress(0);
+            dialogMessage.setText("正在添加B站音频... (0/" + total + ")");
+        });
+
+        for (int i = 0; i < total; i++) {
+            String uniqueId = ids.get(i);
+            String[] parts = uniqueId != null ? uniqueId.split("_") : new String[0];
+            if (parts.length < 2) {
+                failCnt.incrementAndGet();
+                int done = completed.incrementAndGet();
+                updateShareProgress(done, total, successCnt.get(), failCnt.get());
+                continue;
+            }
+            String bvid = parts[0];
+            long cid;
+            try {
+                cid = Long.parseLong(parts[1]);
+            } catch (Exception e) {
+                failCnt.incrementAndGet();
+                int done = completed.incrementAndGet();
+                updateShareProgress(done, total, successCnt.get(), failCnt.get());
+                continue;
+            }
+            Long epId = null;
+            if (epIds != null && i < epIds.length && epIds[i] > 0) {
+                epId = epIds[i];
+            }
+            String title = titles != null && i < titles.size() ? titles.get(i) : uniqueId;
+            String coverUrl = covers != null && i < covers.size() ? covers.get(i) : null;
+
+            downloadSingleBiliVideo(bvid, cid, title, coverUrl, epId, result -> {
+                int done = completed.incrementAndGet();
+                if (result != null && !result.isEmpty()) {
+                    successCnt.incrementAndGet();
+                    runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed()) {
+                            return;
+                        }
+                        appendResolvedBiliSongToCurrentPlaylist(result, title, coverUrl);
+                    });
+                } else {
+                    failCnt.incrementAndGet();
+                }
+
+                updateShareProgress(done, total, successCnt.get(), failCnt.get());
+            });
+        }
+    }
+
+    private void updateShareProgress(int completed, int total, int success, int fail) {
+        runOnUiThread(() -> {
+            if (progressDialog == null || dialogProgressBar == null || dialogMessage == null) {
+                return;
+            }
+            int percent = total > 0 ? (completed * 100 / total) : 0;
+            dialogProgressBar.setProgress(percent);
+            dialogMessage.setText("正在获取B站音频... (" + completed + "/" + total + ")");
+            if (completed >= total) {
+                dismissProgressDialog();
+                Toast.makeText(MainActivity.this, "完成：成功 " + success + "，失败 " + fail, Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     // 去重，歌曲本地储存唯一标识用的是musicname，复选删除同名歌曲将影响播放状态，但没有实现，可修改
@@ -2314,11 +2719,98 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             listview.smoothScrollToPosition(selectedPosition);
         }
 
+        syncBiliBoundPlaylistIfNeeded(playlist);
         refreshHeaderCover();
+    }
+
+    private void syncBiliBoundPlaylistIfNeeded(String playlistName) {
+        if (playlistName == null || playlistName.isEmpty()) {
+            return;
+        }
+        com.example.myapplication.model.Playlist meta = com.example.myapplication.utils.PlaylistStore.findByName(this, playlistName);
+        if (meta == null || !meta.isBiliBound()) {
+            return;
+        }
+        String uid = meta.getBiliUid();
+        if (uid == null || uid.isEmpty()) {
+            return;
+        }
+        com.example.myapplication.utils.BiliPlaylistSyncManager.SyncCallback refreshCallback = songCount -> runOnUiThread(() -> {
+            if (songCount < 0) {
+                return;
+            }
+            if (isFinishing() || isDestroyed()) {
+                return;
+            }
+            List<Map<String, Object>> refreshed = MusicLoader.loadSongs(this, playlistName);
+            musicList.clear();
+            musicList.addAll(refreshed);
+            for (Map<String, Object> item : musicList) {
+                item.put("isSelected", false);
+            }
+            if (listview != null && listview.getAdapter() instanceof BatchModeAdapter) {
+                BatchModeAdapter adapter = (BatchModeAdapter) listview.getAdapter();
+                adapter.setData(musicList);
+                adapter.notifyDataSetChanged();
+            }
+            refreshHeaderCover();
+            updateNavButtons();
+        });
+
+        String bindingType = meta.getEffectiveBiliBindingType();
+        if (com.example.myapplication.model.Playlist.BILI_BIND_TYPE_SEASON.equals(bindingType)) {
+            String seasonId = meta.getBiliSeasonId();
+            if (seasonId == null || seasonId.isEmpty()) {
+                return;
+            }
+            com.example.myapplication.utils.BiliPlaylistSyncManager.syncBoundSeasonToPlaylist(
+                    this,
+                    new okhttp3.OkHttpClient(),
+                    uid,
+                    seasonId,
+                    playlistName,
+                    refreshCallback
+            );
+            return;
+        }
+        if (com.example.myapplication.model.Playlist.BILI_BIND_TYPE_SERIES.equals(bindingType)) {
+            String seriesId = meta.getBiliSeriesId();
+            if (seriesId == null || seriesId.isEmpty()) {
+                return;
+            }
+            com.example.myapplication.utils.BiliPlaylistSyncManager.syncBoundSeriesToPlaylist(
+                    this,
+                    new okhttp3.OkHttpClient(),
+                    uid,
+                    seriesId,
+                    playlistName,
+                    refreshCallback
+            );
+            return;
+        }
+
+        String folderId = meta.getBiliFolderId();
+        if (folderId == null || folderId.isEmpty()) {
+            return;
+        }
+        com.example.myapplication.utils.BiliPlaylistSyncManager.syncBoundFolderToPlaylist(
+                this,
+                new okhttp3.OkHttpClient(),
+                uid,
+                folderId,
+                playlistName,
+                refreshCallback
+        );
     }
 
     // 验证文件有效性
     private boolean isFileValid(String filePath) {
+        if (filePath == null || filePath.trim().isEmpty()) {
+            return false;
+        }
+        if (filePath.startsWith("bili://")) {
+            return true;
+        }
         if (filePath.startsWith("http")) {
             return true;
         }
@@ -2327,6 +2819,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             try (Cursor cursor = getContentResolver().query(
                     Uri.parse(filePath), null, null, null, null)) {
                 return cursor != null && cursor.getCount() > 0;
+            } catch (Exception e) {
+                return false;
+            }
+        } else if (filePath.startsWith("file://")) {
+            try {
+                return new File(Uri.parse(filePath).getPath()).exists();
             } catch (Exception e) {
                 return false;
             }
@@ -2549,69 +3047,17 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         builder.setView(inputLayout);
 
         builder.setPositiveButton("确定", (dialog, which) -> {
-            String bv = input.getText().toString().trim();
-            if (bv.isEmpty()) {
+            String raw = input.getText().toString().trim();
+            if (raw.isEmpty()) {
                 Toast.makeText(this, "不能为空", Toast.LENGTH_SHORT).show();
             } else {
-                // 如果是bv或av直接返回
-                if (bv.matches("BV[0-9A-Za-z]{10}") || bv.matches("av\\d+")) {
-                    callback.onResult(bv); // 调用回调传递
-                    dialog.dismiss();
-                } else if (bv.contains("https://b23.tv/")) {
-                    // 手机端分享，先提取出短链
-                    Pattern pattern = Pattern.compile("https://b23\\.tv/\\S+");
-                    Matcher matcher = pattern.matcher(bv);
-                    if (matcher.find()) {
-                        bv = matcher.group(); // 找到第一个短链
-                    }
-                    // 发送HEAD请求得到重定向的链接
-                    OkHttpClient client = new OkHttpClient.Builder()
-                            .followRedirects(false) // 关键点：不要自动跟随重定向
-                            .build();
-
-                    Request request = new Request.Builder()
-                            .url(bv)
-                            .head() // 只取 Header，不要正文
-                            .build();
-
-                    client.newCall(request).enqueue(new Callback() {
-                        @Override
-                        public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                            Log.e("ShortLink", "请求失败: " + e.getMessage());
-                        }
-
-                        @Override
-                        public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                            if (response.code() == 301 || response.code() == 302) {
-                                String redirectUrl = response.header("Location");
-
-                                // 提取 BV 号
-                                Pattern pattern = Pattern.compile("BV[0-9A-Za-z]+");
-                                Matcher matcher = pattern.matcher(redirectUrl);
-                                if (matcher.find()) {
-                                    String bvid = matcher.group();
-                                    Log.d("ShortLink", "提取出的 BV 号: " + bvid);
-                                    callback.onResult(bvid); // 调用回调传递
-                                }
-                            } else {
-                                Log.e("ShortLink", "不是重定向: " + response.code());
-                            }
-                        }
-                    });
-
-                    dialog.dismiss();
-                } else if (bv.startsWith("https://www.bilibili.com/video/")) {
-                    // 电脑端链接，直接提取bv号
-                    Pattern pattern = Pattern.compile("BV[0-9A-Za-z]+");
-                    Matcher matcher = pattern.matcher(bv);
-                    if (matcher.find()) {
-                        String bvid = matcher.group();
-                        Log.d("ShortLink", "提取出的 BV 号: " + bvid);
-                        callback.onResult(bvid); // 调用回调传递
-                    }
-                } else {
-                    Toast.makeText(this, "无效的BV号格式", Toast.LENGTH_SHORT).show();
+                String resolved = extractBiliUrlOrId(raw);
+                if (resolved == null || resolved.isEmpty()) {
+                    Toast.makeText(this, "无法识别输入内容", Toast.LENGTH_SHORT).show();
+                    return;
                 }
+                callback.onResult(resolved);
+                dialog.dismiss();
             }
         });
 
@@ -2693,17 +3139,42 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
                             String json = response.body().string();
                             JsonObject jsonObj = JsonParser.parseString(json).getAsJsonObject();
-                            JsonArray folders = jsonObj.getAsJsonObject("data").getAsJsonArray("list");
+                            int code = jsonObj.has("code") ? jsonObj.get("code").getAsInt() : -1;
+                            if (code != 0 || !jsonObj.has("data") || jsonObj.get("data").isJsonNull()) {
+                                String msg = jsonObj.has("message") ? jsonObj.get("message").getAsString() : "未知错误";
+                                runOnUiThread(() -> {
+                                    dismissProgressDialog();
+                                    Toast.makeText(MainActivity.this, "无法获取收藏夹（可能未公开）: " + msg, Toast.LENGTH_SHORT).show();
+                                });
+                                return;
+                            }
+
+                            JsonObject dataObj = jsonObj.getAsJsonObject("data");
+                            if (!dataObj.has("list") || dataObj.get("list").isJsonNull()) {
+                                runOnUiThread(() -> {
+                                    dismissProgressDialog();
+                                    Toast.makeText(MainActivity.this, "该用户没有可用收藏夹（可能未公开）", Toast.LENGTH_SHORT).show();
+                                });
+                                return;
+                            }
+                            JsonArray folders = dataObj.getAsJsonArray("list");
 
                             boolean found = false;
                             String fid = "";
 
                             // 遍历查找指定的收藏夹
+                            String favCover = null;
+                            String favOwnerName = null;
+                            String favOwnerUid = finalUid;
+                            int favMediaCount = -1;
                             for (JsonElement folder : folders) {
                                 JsonObject folderObj = folder.getAsJsonObject();
                                 if (folderObj.get("title").getAsString().equals(collectionId)) {
                                     found = true;
                                     fid = folderObj.get("id").getAsString();
+                                    if (folderObj.has("media_count") && !folderObj.get("media_count").isJsonNull()) {
+                                        favMediaCount = folderObj.get("media_count").getAsInt();
+                                    }
                                     Log.d("BiliCollection", "找到收藏夹: " + fid);
                                     break;
                                 }
@@ -2718,7 +3189,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                             }
 
                             // 找到收藏夹后，获取视频详细信息并显示选择界面
-                            showBiliVideoSelectionDialog(finalUid, fid, callback);
+                            showBiliVideoSelectionDialog(finalUid, fid, collectionId, favCover, favOwnerName, favOwnerUid, favMediaCount, callback);
                         }
                     });
                 } else {
@@ -2747,11 +3218,16 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         dialog.show();
     }
 
-    private void showBiliVideoSelectionDialog(String uid, String fid, biliCallback<List<String>> callback) {
+    private void showBiliVideoSelectionDialog(String uid, String fid, String collectionName, String favCoverUrl, String ownerName, String ownerUid, int favMediaCount, biliCallback<List<String>> callback) {
         // 在UI线程中创建和显示对话框
         runOnUiThread(() -> {
             // 创建对话框视图
             View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_bili_video_selection, null);
+            ImageView ivAvatar = dialogView.findViewById(R.id.ivBiliUserAvatar);
+            TextView tvUserName = dialogView.findViewById(R.id.tvBiliUserName);
+            TextView tvUserUid = dialogView.findViewById(R.id.tvBiliUserUid);
+            TextView tvFavInfo = dialogView.findViewById(R.id.tvBiliFavInfo);
+            TextView tvTotalCount = dialogView.findViewById(R.id.tvBiliTotalCount);
             CheckBox cbSelectAll = dialogView.findViewById(R.id.cbSelectAll);
             TextView tvSelectedCount = dialogView.findViewById(R.id.tvSelectedCount);
             Button btnCancel = dialogView.findViewById(R.id.btnCancel);
@@ -2782,7 +3258,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
             // 创建对话框
             AlertDialog.Builder builder = new AlertDialog.Builder(this);
-            builder.setTitle("选择视频");
             builder.setView(dialogView);
             builder.setCancelable(false);
 
@@ -2816,8 +3291,171 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             // 显示对话框
             videoDialog.show();
 
+            int screenH = getResources().getDisplayMetrics().heightPixels;
+            boolean isLandscape = getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+            float fraction = isLandscape ? 0.40f : 0.50f;
+            ViewGroup.LayoutParams lp = lvVideos.getLayoutParams();
+            lp.height = Math.max(lvVideos.getLayoutParams().height, (int) (screenH * fraction));
+            lvVideos.setLayoutParams(lp);
+
+            if (tvUserUid != null) {
+                String displayUid = ownerUid != null && !ownerUid.isEmpty() ? ownerUid : uid;
+                tvUserUid.setText("UID: " + displayUid);
+            }
+            if (tvFavInfo != null) {
+                tvFavInfo.setText("收藏夹: " + collectionName + "  FID: " + fid);
+            }
+            if (tvTotalCount != null) {
+                if (favMediaCount >= 0) {
+                    tvTotalCount.setText("总数: " + favMediaCount);
+                } else {
+                    tvTotalCount.setText("总数: -");
+                }
+            }
+            if (tvUserName != null) {
+                if (ownerName != null && !ownerName.isEmpty()) {
+                    tvUserName.setText(ownerName);
+                } else {
+                    tvUserName.setText("UP主");
+                }
+            }
+            if (ivAvatar != null && favCoverUrl != null && !favCoverUrl.isEmpty()) {
+                MusicCoverUtils.loadCoverFromUrl(favCoverUrl, MainActivity.this, ivAvatar);
+            }
+            fetchBiliFavFolderInfo(fid, info -> {
+                if (info == null) {
+                    return;
+                }
+                String cover = (String) info.get("cover");
+                String upName = (String) info.get("upName");
+                String upUid = (String) info.get("upUid");
+                String title = (String) info.get("title");
+                Integer count = (Integer) info.get("mediaCount");
+                runOnUiThread(() -> {
+                    if (tvFavInfo != null && title != null && !title.isEmpty()) {
+                        tvFavInfo.setText("收藏夹: " + title + "  FID: " + fid);
+                    }
+                    if (tvUserName != null && upName != null && !upName.isEmpty()) {
+                        tvUserName.setText(upName);
+                    }
+                    if (tvUserUid != null && upUid != null && !upUid.isEmpty()) {
+                        tvUserUid.setText("UID: " + upUid);
+                    }
+                    if (tvTotalCount != null && count != null && count >= 0) {
+                        tvTotalCount.setText("总数: " + count);
+                    }
+                    if (ivAvatar != null && cover != null && !cover.isEmpty()) {
+                        MusicCoverUtils.loadCoverFromUrl(cover, MainActivity.this, ivAvatar);
+                    }
+                });
+            });
+
             // 加载第一页数据。里面会设置滚动监听器递归加载下一页
-            loadBiliVideoPage(uid, fid, 1, 20, adapter, lvVideos, loadMoreProgress);
+            loadBiliVideoPage(uid, fid, 1, 20, adapter, lvVideos, loadMoreProgress, tvTotalCount);
+        });
+    }
+
+    private void fetchBiliFavFolderInfo(String mediaId, biliCallback<Map<String, Object>> callback) {
+        OkHttpClient client = new OkHttpClient();
+        Request req = new Request.Builder()
+                .url("https://api.bilibili.com/x/v3/fav/folder/info?media_id=" + mediaId)
+                .addHeader("User-Agent", "Mozilla/5.0")
+                .addHeader("Referer", "https://www.bilibili.com/")
+                .addHeader("Accept", "application/json")
+                .build();
+        client.newCall(req).enqueue(new Callback() {
+            @Override
+            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                callback.onResult(null);
+            }
+
+            @Override
+            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                if (!response.isSuccessful() || response.body() == null) {
+                    callback.onResult(null);
+                    return;
+                }
+                String json = response.body().string();
+                JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
+                int code = obj.has("code") ? obj.get("code").getAsInt() : -1;
+                if (code != 0 || !obj.has("data") || obj.get("data").isJsonNull()) {
+                    callback.onResult(null);
+                    return;
+                }
+                JsonObject data = obj.getAsJsonObject("data");
+                String title = data.has("title") && !data.get("title").isJsonNull() ? data.get("title").getAsString() : null;
+                String cover = data.has("cover") && !data.get("cover").isJsonNull() ? data.get("cover").getAsString() : null;
+                Integer mediaCount = data.has("media_count") && !data.get("media_count").isJsonNull() ? data.get("media_count").getAsInt() : null;
+                String upName = null;
+                String upUid = null;
+                if (data.has("upper") && !data.get("upper").isJsonNull()) {
+                    JsonObject upper = data.getAsJsonObject("upper");
+                    upName = upper.has("name") && !upper.get("name").isJsonNull() ? upper.get("name").getAsString() : null;
+                    upUid = upper.has("mid") && !upper.get("mid").isJsonNull() ? upper.get("mid").getAsString() : null;
+                }
+                Map<String, Object> result = new HashMap<>();
+                result.put("title", title);
+                result.put("cover", cover);
+                result.put("mediaCount", mediaCount);
+                result.put("upName", upName);
+                result.put("upUid", upUid);
+                callback.onResult(result);
+            }
+        });
+    }
+
+    private void fetchBiliUserInfo(String uid, ImageView avatarView, TextView nameView) {
+        OkHttpClient client = new OkHttpClient();
+        Request req = new Request.Builder()
+                .url("https://api.bilibili.com/x/space/acc/info?mid=" + uid)
+                .addHeader("User-Agent", "Mozilla/5.0")
+                .addHeader("Referer", "https://www.bilibili.com/")
+                .build();
+        client.newCall(req).enqueue(new Callback() {
+            @Override
+            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                Log.e("BiliCollection", "获取用户信息失败: " + e.getMessage());
+            }
+
+            @Override
+            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                if (!response.isSuccessful()) {
+                    Log.e("BiliCollection", "获取用户信息HTTP失败: " + response.code());
+                    return;
+                }
+                String json = response.body().string();
+                JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
+                int code = obj.has("code") ? obj.get("code").getAsInt() : -1;
+                if (code != 0) {
+                    String msg = obj.has("message") ? obj.get("message").getAsString() : "未知错误";
+                    Log.e("BiliCollection", "获取用户信息失败: code=" + code + " msg=" + msg);
+                    return;
+                }
+                if (!obj.has("data") || obj.get("data").isJsonNull()) {
+                    Log.e("BiliCollection", "获取用户信息失败: data为空");
+                    return;
+                }
+                JsonObject data = obj.getAsJsonObject("data");
+                String name = data.has("name") && !data.get("name").isJsonNull() ? data.get("name").getAsString() : null;
+                String face = data.has("face") && !data.get("face").isJsonNull() ? data.get("face").getAsString() : null;
+                if (face != null) {
+                    if (face.startsWith("//")) {
+                        face = "https:" + face;
+                    } else if (face.startsWith("http://")) {
+                        face = "https://" + face.substring("http://".length());
+                    }
+                }
+                Log.d("BiliCollection", "用户信息: name=" + name + " face=" + face);
+                final String faceFinal = face;
+                runOnUiThread(() -> {
+                    if (nameView != null && name != null) {
+                        nameView.setText(name);
+                    }
+                    if (avatarView != null && faceFinal != null && !faceFinal.isEmpty()) {
+                        MusicCoverUtils.loadCoverFromUrl(faceFinal, MainActivity.this, avatarView);
+                    }
+                });
+            }
         });
     }
 
@@ -3077,7 +3715,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                            biliCallback<Map<String, Object>> callback) {
 
         safeShowProgressDialog();
-        updateProgress(0, "正在下载视频合集 (0/" + selectedItems.size() + ")");
+        updateProgress(0, "正在添加视频合集 (0/" + selectedItems.size() + ")");
 
         AtomicInteger completedCount = new AtomicInteger(0);
         AtomicInteger successCount = new AtomicInteger(0);
@@ -3103,22 +3741,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                 }
 
                                 try {
-                                    String title = (String) result.get("title");
-                                    File f = (File) result.get("file");
-                                    String resultCoverUrl = (String) result.get("coverUrl");
-                                    String path = f.getAbsolutePath();
-
-                                    MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-                                    retriever.setDataSource(path);
-                                    String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
-                                    int duration = Integer.parseInt(durationStr) / 1000;
-
-                                    Song newSong = new Song(duration, title, path, currentPlaylist);
-                                    newSong.setCoverUrl(resultCoverUrl);
-                                    addSongToPlaylist(newSong);
-                                    MusicLoader.appendMusic(this, newSong);
-
-                                    retriever.release();
+                                    appendResolvedBiliSongToCurrentPlaylist(result, item.getTitle(), coverUrl);
                                 } catch (Exception e) {
                                     Log.e("BiliMusic", "处理音频文件失败: " + e.getMessage());
                                 }
@@ -3127,7 +3750,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
                         // 更新进度
                         int progressPercent = (completed * 100) / selectedItems.size();
-                        updateProgress(progressPercent, "正在下载视频合集 (" + completed + "/" + selectedItems.size() + ")");
+                        updateProgress(progressPercent, "正在添加视频合集 (" + completed + "/" + selectedItems.size() + ")");
 
                         if (completed == selectedItems.size()) {
                             // 全部完成
@@ -3171,7 +3794,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                             biliCallback<Map<String, Object>> callback) {
 
         safeShowProgressDialog();
-        updateProgress(0, "正在下载视频合集 (0/" + selectedItems.size() + ")");
+        updateProgress(0, "正在添加视频合集 (0/" + selectedItems.size() + ")");
 
         AtomicInteger completedCount = new AtomicInteger(0);
         AtomicInteger successCount = new AtomicInteger(0);
@@ -3195,23 +3818,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                     return;
                                 }
 
-                                String title = (String) result.get("title");
-                                File f = (File) result.get("file");
-                                String coverUrl = (String) result.get("coverUrl");
-                                String path = f.getAbsolutePath();
-
                                 try {
-                                    MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-                                    retriever.setDataSource(path);
-                                    String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
-                                    int duration = Integer.parseInt(durationStr) / 1000;
-
-                                    Song newSong = new Song(duration, title, path, currentPlaylist);
-                                    newSong.setCoverUrl(coverUrl);
-                                    addSongToPlaylist(newSong);
-                                    MusicLoader.appendMusic(this, newSong);
-
-                                    retriever.release();
+                                    appendResolvedBiliSongToCurrentPlaylist(result, item.getTitle(), videoInfo.get("pic").getAsString());
                                 } catch (Exception e) {
                                     Log.e("BiliMusic", "处理音频文件失败: " + e.getMessage());
                                 }
@@ -3220,7 +3828,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
                         // 更新进度
                         int progressPercent = (completed * 100) / selectedItems.size();
-                        updateProgress(progressPercent, "正在下载视频合集 (" + completed + "/" + selectedItems.size() + ")");
+                        updateProgress(progressPercent, "正在添加视频合集 (" + completed + "/" + selectedItems.size() + ")");
 
                         if (completed == selectedItems.size()) {
                             // 全部完成
@@ -3260,7 +3868,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     }
 
     private void loadBiliVideoPage(String uid, String fid, int pageNum, int pageSize,
-                                   BiliVideoAdapter adapter, ListView listView, ProgressBar loadMoreProgress) {
+                                   BiliVideoAdapter adapter, ListView listView, ProgressBar loadMoreProgress, TextView tvTotalCount) {
         // 如果是第一页，显示进度对话框
         if (pageNum == 1) {
             if (dialogMessage != null) {
@@ -3313,6 +3921,14 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 JsonObject jsonObj = JsonParser.parseString(json).getAsJsonObject();
                 JsonObject data = jsonObj.getAsJsonObject("data");
 
+                int totalCount = -1;
+                if (data != null && data.has("info") && !data.get("info").isJsonNull()) {
+                    JsonObject info = data.getAsJsonObject("info");
+                    if (info.has("media_count") && !info.get("media_count").isJsonNull()) {
+                        totalCount = info.get("media_count").getAsInt();
+                    }
+                }
+
                 // 收藏夹为空的处理
                 JsonArray medias;
                 if (data.has("medias") && !data.get("medias").isJsonNull()) {
@@ -3335,6 +3951,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
                 // 解析视频信息
                 List<BiliVideoAdapter.BiliVideoItem> videoItems = new ArrayList<>();
+                int skippedTooLong = 0;
                 for (JsonElement media : medias) {
                     JsonObject videoObj = media.getAsJsonObject();
                     String bvid = videoObj.get("bvid").getAsString();
@@ -3344,6 +3961,10 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
                     // 失效视频后续无法获取，直接筛掉
                     if (!Objects.equals(title, "已失效视频")) {
+                        if (duration > BILI_FAV_MAX_DURATION_SECONDS) {
+                            skippedTooLong++;
+                            continue;
+                        }
                         BiliVideoAdapter.BiliVideoItem item = new BiliVideoAdapter.BiliVideoItem(
                                 bvid, title, uploader, duration);
                         videoItems.add(item);
@@ -3353,6 +3974,8 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 // 在UI线程中更新列表
                 final boolean finalHasMore = hasMore;
                 final int finalPageNum = pageNum;
+                final int skippedTooLongFinal = skippedTooLong;
+                final int totalCountFinal = totalCount;
                 runOnUiThread(() -> {
                     // 如果是第一页，关闭进度对话框
                     if (finalPageNum == 1) {
@@ -3370,6 +3993,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
 
                     // 添加数据到适配器
                     adapter.addItems(videoItems);
+                    if (finalPageNum == 1 && tvTotalCount != null && totalCountFinal >= 0) {
+                        tvTotalCount.setText("总数: " + totalCountFinal);
+                    }
+                    if (skippedTooLongFinal > 0 && finalPageNum == 1) {
+                        Toast.makeText(MainActivity.this, "已跳过 " + skippedTooLongFinal + " 个超长视频", Toast.LENGTH_SHORT).show();
+                    }
 
                     // 如果是第一次加载，设置滚动监听器
                     if (finalPageNum == 1) {
@@ -3397,7 +4026,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                                     loading = true;
                                     page++;
                                     loadBiliVideoPage(uid, fid, page, pageSize, adapter, listView,
-                                            loadMoreProgress);
+                                            loadMoreProgress, tvTotalCount);
                                 }
                             }
                         });
@@ -3408,11 +4037,161 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
     }
 
     void getBiliMusic(String bv, Context context, biliCallback<Map<String, Object>> callback) {
+        getBiliMusic(bv, context, false, callback);
+    }
+
+    void getBiliMusic(String bv, Context context, boolean disableCollectionPick, biliCallback<Map<String, Object>> callback) {
+        getBiliMusicInternal(bv, context, disableCollectionPick, callback, 0);
+    }
+
+    private String extractBiliUrlOrId(String raw) {
+        return BiliLinkParser.extractToken(raw);
+    }
+
+    private String extractBvid(String token) {
+        return BiliLinkParser.extractBvid(token);
+    }
+
+    private String extractAid(String token) {
+        return BiliLinkParser.extractAid(token);
+    }
+
+    private void getBiliMusicInternal(String input, Context context, boolean disableCollectionPick,
+                                      biliCallback<Map<String, Object>> callback, int depth) {
+        if (depth > 3) {
+            callback.onResult(null);
+            runOnUiThread(() -> Toast.makeText(context, "链接解析失败", Toast.LENGTH_SHORT).show());
+            return;
+        }
+
+        String token = extractBiliUrlOrId(input);
+        if (token == null || token.isEmpty()) {
+            callback.onResult(null);
+            runOnUiThread(() -> Toast.makeText(context, "无法识别链接", Toast.LENGTH_SHORT).show());
+            return;
+        }
+
+        if (token.startsWith("b23.tv/")) {
+            token = "https://" + token;
+        } else if (token.startsWith("www.bilibili.com/")) {
+            token = "https://" + token;
+        } else if (token.startsWith("m.bilibili.com/")) {
+            token = "https://" + token;
+        }
+
+        if (token.startsWith("http://") || token.startsWith("https://")) {
+            Uri uri = Uri.parse(token);
+            String host = uri.getHost() != null ? uri.getHost() : "";
+            if (host.contains("b23.tv")) {
+                resolveFinalUrl(token, finalUrl -> {
+                    if (finalUrl == null) {
+                        callback.onResult(null);
+                        runOnUiThread(() -> Toast.makeText(context, "短链解析失败", Toast.LENGTH_SHORT).show());
+                        return;
+                    }
+                    getBiliMusicInternal(finalUrl, context, disableCollectionPick, callback, depth + 1);
+                });
+                return;
+            }
+
+            String path = uri.getPath() != null ? uri.getPath() : "";
+            int p = 0;
+            try {
+                String pStr = uri.getQueryParameter("p");
+                if (pStr != null) {
+                    p = Integer.parseInt(pStr);
+                }
+            } catch (Exception ignored) {
+            }
+
+            Long epId = extractBangumiEpId(path);
+            if (epId != null) {
+                fetchBangumiEpisode(epId, null, info -> {
+                    if (info == null) {
+                        callback.onResult(null);
+                        runOnUiThread(() -> Toast.makeText(context, "番剧解析失败", Toast.LENGTH_SHORT).show());
+                        return;
+                    }
+                    String bvid = (String) info.get("bvid");
+                    Long cid = (Long) info.get("cid");
+                    String title = (String) info.get("title");
+                    String cover = (String) info.get("cover");
+                    downloadSingleBiliVideo(bvid, cid != null ? cid : -1L, title, cover, epId, callback);
+                });
+                return;
+            }
+
+            Long ssId = extractBangumiSeasonId(path);
+            if (ssId != null) {
+                fetchBangumiEpisode(null, ssId, info -> {
+                    if (info == null) {
+                        callback.onResult(null);
+                        runOnUiThread(() -> Toast.makeText(context, "番剧解析失败", Toast.LENGTH_SHORT).show());
+                        return;
+                    }
+                    String bvid = (String) info.get("bvid");
+                    Long cid = (Long) info.get("cid");
+                    String title = (String) info.get("title");
+                    String cover = (String) info.get("cover");
+                    Long ep = (Long) info.get("epId");
+                    downloadSingleBiliVideo(bvid, cid != null ? cid : -1L, title, cover, ep, callback);
+                });
+                return;
+            }
+
+            String bvid = extractBvid(token);
+            if (bvid != null) {
+                requestViewAndDownloadByBvid(bvid, p, context, disableCollectionPick, callback);
+                return;
+            }
+
+            String aid = extractAid(token);
+            if (aid != null) {
+                requestViewAndDownloadByAid(aid, p, context, disableCollectionPick, callback);
+                return;
+            }
+
+            callback.onResult(null);
+            runOnUiThread(() -> Toast.makeText(context, "不支持的B站链接", Toast.LENGTH_SHORT).show());
+            return;
+        }
+
+        if (token.matches("BV[0-9A-Za-z]{10,}")) {
+            requestViewAndDownloadByBvid(token, 0, context, disableCollectionPick, callback);
+            return;
+        }
+        if (token.matches("av\\d+")) {
+            requestViewAndDownloadByAid(token.substring(2), 0, context, disableCollectionPick, callback);
+            return;
+        }
+        if (token.matches("ep\\d+")) {
+            try {
+                Long ep = Long.parseLong(token.substring(2));
+                getBiliMusicInternal("https://www.bilibili.com/bangumi/play/ep" + ep, context, disableCollectionPick, callback, depth + 1);
+                return;
+            } catch (Exception ignored) {
+            }
+        }
+        if (token.matches("ss\\d+")) {
+            try {
+                Long ss = Long.parseLong(token.substring(2));
+                getBiliMusicInternal("https://www.bilibili.com/bangumi/play/ss" + ss, context, disableCollectionPick, callback, depth + 1);
+                return;
+            } catch (Exception ignored) {
+            }
+        }
+
+        callback.onResult(null);
+        runOnUiThread(() -> Toast.makeText(context, "无法识别链接", Toast.LENGTH_SHORT).show());
+    }
+
+    private void requestViewAndDownloadByBvid(String bvid, int p, Context context, boolean disableCollectionPick,
+                                              biliCallback<Map<String, Object>> callback) {
         OkHttpClient client = new OkHttpClient();
 
         // 获取视频信息
         Request cidRequest = new Request.Builder()
-                .url("https://api.bilibili.com/x/web-interface/view?bvid=" + bv)
+                .url("https://api.bilibili.com/x/web-interface/view?bvid=" + bvid)
                 .addHeader("User-Agent", "Mozilla/5.0")
                 .addHeader("Referer", "https://www.bilibili.com/")
                 .build();
@@ -3427,9 +4206,15 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             @Override
             public void onResponse(@NonNull Call call, @NonNull Response res) throws IOException {
                 String str = res.body().string();
-                Log.d("BiliMusic", "API响应: " + str); // 调试
-
-                JsonObject json = JsonParser.parseString(str).getAsJsonObject().get("data").getAsJsonObject();
+                JsonObject root = JsonParser.parseString(str).getAsJsonObject();
+                int code = root.has("code") ? root.get("code").getAsInt() : -1;
+                if (code != 0 || !root.has("data") || root.get("data").isJsonNull()) {
+                    String msg = root.has("message") ? root.get("message").getAsString() : "未知错误";
+                    callback.onResult(null);
+                    runOnUiThread(() -> Toast.makeText(context, "解析失败: " + msg, Toast.LENGTH_SHORT).show());
+                    return;
+                }
+                JsonObject json = root.getAsJsonObject("data");
 
                 // 检查是否为视频合集
                 JsonArray pages = json.getAsJsonArray("pages");
@@ -3441,7 +4226,20 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 boolean isCollection = (pages != null && pages.size() > 1) ||
                         (ugcSeason != null && ugcSeason.has("sections"));
 
-                if (isCollection) {
+                if (p > 0 && pages != null && pages.size() > 0) {
+                    int index = Math.max(0, Math.min(p - 1, pages.size() - 1));
+                    JsonObject pageObj = pages.get(index).getAsJsonObject();
+                    long cid = pageObj.has("cid") ? pageObj.get("cid").getAsLong() : json.get("cid").getAsLong();
+                    String title = json.get("title").getAsString();
+                    if (pageObj.has("part") && !pageObj.get("part").isJsonNull()) {
+                        title = title + " - " + pageObj.get("part").getAsString();
+                    }
+                    String coverUrl = json.get("pic").getAsString();
+                    downloadSingleBiliVideo(bvid, cid, title, coverUrl, null, callback);
+                    return;
+                }
+
+                if (isCollection && !disableCollectionPick) {
                     Log.d("BiliMusic", "检测到视频合集，显示选择列表");
                     // 尝试提取目标P对应的 cid 以便高亮
                     long targetCid = json.has("cid") ? json.get("cid").getAsLong() : -1;
@@ -3449,10 +4247,10 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     // 处理合集逻辑
                     if (ugcSeason != null) {
                         // UGC合集，需要从sections中提取视频列表
-                        runOnUiThread(() -> showBiliUGCSeasonDialog(bv, json, ugcSeason, targetCid, callback));
+                        runOnUiThread(() -> showBiliUGCSeasonDialog(bvid, json, ugcSeason, targetCid, callback));
                     } else {
                         // 多P视频
-                        runOnUiThread(() -> showBiliVideoCollectionDialog(bv, json, pages, targetCid, callback));
+                        runOnUiThread(() -> showBiliVideoCollectionDialog(bvid, json, pages, targetCid, callback));
                     }
                 } else {
                     Log.d("BiliMusic", "单个视频，继续原有逻辑");
@@ -3461,13 +4259,208 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     String title = json.get("title").getAsString();
                     String coverUrl = json.get("pic").getAsString();
 
-                    downloadSingleBiliVideo(bv, cid, title, coverUrl, callback);
+                    downloadSingleBiliVideo(bvid, cid, title, coverUrl, null, callback);
                 }
             }
         });
     }
 
+    private void requestViewAndDownloadByAid(String aid, int p, Context context, boolean disableCollectionPick,
+                                             biliCallback<Map<String, Object>> callback) {
+        OkHttpClient client = new OkHttpClient();
+        Request cidRequest = new Request.Builder()
+                .url("https://api.bilibili.com/x/web-interface/view?aid=" + aid)
+                .addHeader("User-Agent", "Mozilla/5.0")
+                .addHeader("Referer", "https://www.bilibili.com/")
+                .build();
+        client.newCall(cidRequest).enqueue(new Callback() {
+            @Override
+            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                Log.e("BiliMusic", "onFailure: " + e);
+                runOnUiThread(() -> Toast.makeText(context, "请求失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                callback.onResult(null);
+            }
+
+            @Override
+            public void onResponse(@NonNull Call call, @NonNull Response res) throws IOException {
+                String str = res.body().string();
+                JsonObject root = JsonParser.parseString(str).getAsJsonObject();
+                int code = root.has("code") ? root.get("code").getAsInt() : -1;
+                if (code != 0 || !root.has("data") || root.get("data").isJsonNull()) {
+                    String msg = root.has("message") ? root.get("message").getAsString() : "未知错误";
+                    callback.onResult(null);
+                    runOnUiThread(() -> Toast.makeText(context, "解析失败: " + msg, Toast.LENGTH_SHORT).show());
+                    return;
+                }
+                JsonObject json = root.getAsJsonObject("data");
+                String bvid = json.has("bvid") && !json.get("bvid").isJsonNull() ? json.get("bvid").getAsString() : null;
+                if (bvid == null || bvid.isEmpty()) {
+                    callback.onResult(null);
+                    runOnUiThread(() -> Toast.makeText(context, "解析失败: 缺少BV号", Toast.LENGTH_SHORT).show());
+                    return;
+                }
+                requestViewAndDownloadByBvid(bvid, p, context, disableCollectionPick, callback);
+            }
+        });
+    }
+
+    private void resolveFinalUrl(String url, biliCallback<String> callback) {
+        OkHttpClient client = new OkHttpClient.Builder().followRedirects(true).followSslRedirects(true).build();
+        resolveFinalUrlWithMethod(client, url, true, callback);
+    }
+
+    private void resolveFinalUrlWithMethod(OkHttpClient client, String url, boolean headFirst, biliCallback<String> callback) {
+        Request.Builder b = new Request.Builder()
+                .url(url)
+                .addHeader("User-Agent", "Mozilla/5.0")
+                .addHeader("Referer", "https://www.bilibili.com/");
+        if (headFirst) {
+            b.head();
+        } else {
+            b.get();
+        }
+        Request req = b.build();
+        client.newCall(req).enqueue(new Callback() {
+            @Override
+            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                callback.onResult(null);
+            }
+
+            @Override
+            public void onResponse(@NonNull Call call, @NonNull Response response) {
+                try {
+                    if (headFirst) {
+                        int code = response.code();
+                        if (code == 403 || code == 405 || code == 400) {
+                            response.close();
+                            resolveFinalUrlWithMethod(client, url, false, callback);
+                            return;
+                        }
+                    }
+                    String finalUrl = response.request().url().toString();
+                    callback.onResult(finalUrl);
+                } catch (Exception e) {
+                    callback.onResult(null);
+                } finally {
+                    try {
+                        response.close();
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+        });
+    }
+
+    private Long extractBangumiEpId(String path) {
+        if (path == null) {
+            return null;
+        }
+        Matcher m = Pattern.compile("/bangumi/play/ep(\\d+)").matcher(path);
+        if (m.find()) {
+            try {
+                return Long.parseLong(m.group(1));
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
+    }
+
+    private Long extractBangumiSeasonId(String path) {
+        if (path == null) {
+            return null;
+        }
+        Matcher m = Pattern.compile("/bangumi/play/ss(\\d+)").matcher(path);
+        if (m.find()) {
+            try {
+                return Long.parseLong(m.group(1));
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
+    }
+
+    private void fetchBangumiEpisode(Long epId, Long seasonId, biliCallback<Map<String, Object>> callback) {
+        OkHttpClient client = new OkHttpClient();
+        String url = epId != null
+                ? ("https://api.bilibili.com/pgc/view/web/season?ep_id=" + epId)
+                : ("https://api.bilibili.com/pgc/view/web/season?season_id=" + seasonId);
+        Request req = new Request.Builder()
+                .url(url)
+                .addHeader("User-Agent", "Mozilla/5.0")
+                .addHeader("Referer", "https://www.bilibili.com/")
+                .build();
+        client.newCall(req).enqueue(new Callback() {
+            @Override
+            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                callback.onResult(null);
+            }
+
+            @Override
+            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                if (!response.isSuccessful() || response.body() == null) {
+                    callback.onResult(null);
+                    return;
+                }
+                String json = response.body().string();
+                JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+                int code = root.has("code") ? root.get("code").getAsInt() : -1;
+                if (code != 0 || !root.has("result") || root.get("result").isJsonNull()) {
+                    callback.onResult(null);
+                    return;
+                }
+                JsonObject result = root.getAsJsonObject("result");
+                String seasonTitle = result.has("title") && !result.get("title").isJsonNull() ? result.get("title").getAsString() : "";
+                String seasonCover = result.has("cover") && !result.get("cover").isJsonNull() ? result.get("cover").getAsString() : null;
+                JsonArray episodes = result.has("episodes") && result.get("episodes").isJsonArray() ? result.getAsJsonArray("episodes") : null;
+                if (episodes == null || episodes.size() == 0) {
+                    callback.onResult(null);
+                    return;
+                }
+                JsonObject chosen = null;
+                if (epId != null) {
+                    for (JsonElement el : episodes) {
+                        JsonObject ep = el.getAsJsonObject();
+                        long id = ep.has("id") ? ep.get("id").getAsLong() : -1;
+                        if (id == epId) {
+                            chosen = ep;
+                            break;
+                        }
+                    }
+                }
+                if (chosen == null) {
+                    chosen = episodes.get(0).getAsJsonObject();
+                }
+                String bvid = chosen.has("bvid") && !chosen.get("bvid").isJsonNull() ? chosen.get("bvid").getAsString() : null;
+                long cid = chosen.has("cid") && !chosen.get("cid").isJsonNull() ? chosen.get("cid").getAsLong() : -1;
+                long chosenEpId = chosen.has("id") && !chosen.get("id").isJsonNull() ? chosen.get("id").getAsLong() : -1;
+                String epTitle = chosen.has("title") && !chosen.get("title").isJsonNull() ? chosen.get("title").getAsString() : "";
+                String epLong = chosen.has("long_title") && !chosen.get("long_title").isJsonNull() ? chosen.get("long_title").getAsString() : "";
+                String title = seasonTitle;
+                if (!epTitle.isEmpty()) {
+                    title = title + " - " + epTitle;
+                }
+                if (!epLong.isEmpty()) {
+                    title = title + " " + epLong;
+                }
+                String cover = chosen.has("cover") && !chosen.get("cover").isJsonNull() ? chosen.get("cover").getAsString() : seasonCover;
+                int durationSec = chosen.has("duration") && !chosen.get("duration").isJsonNull() ? chosen.get("duration").getAsInt() : 0;
+                Map<String, Object> out = new HashMap<>();
+                out.put("bvid", bvid);
+                out.put("cid", cid);
+                out.put("title", title);
+                out.put("cover", cover);
+                out.put("epId", chosenEpId);
+                out.put("durationSec", durationSec);
+                callback.onResult(out);
+            }
+        });
+    }
+
     private void downloadSingleBiliVideo(String bv, long cid, String title, String coverUrl, biliCallback<Map<String, Object>> callback) {
+        downloadSingleBiliVideo(bv, cid, title, coverUrl, null, callback);
+    }
+
+    private void downloadSingleBiliVideo(String bv, long cid, String title, String coverUrl, Long epId, biliCallback<Map<String, Object>> callback) {
         OkHttpClient client = new OkHttpClient();
 
         // Step 2: 获取音频 URL
@@ -3497,9 +4490,31 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                 // 请求dash，分离视频和音频流
                 String json = response.body().string();
                 JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
-                JsonArray audioArray = obj.get("data").getAsJsonObject()
-                        .get("dash").getAsJsonObject()
-                        .get("audio").getAsJsonArray();
+                int code = obj.has("code") ? obj.get("code").getAsInt() : -1;
+                if (code != 0 || !obj.has("data") || obj.get("data").isJsonNull()) {
+                    String msg = obj.has("message") ? obj.get("message").getAsString() : "未知错误";
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "获取音频URL失败: " + msg, Toast.LENGTH_SHORT).show());
+                    callback.onResult(null);
+                    return;
+                }
+                JsonObject data = obj.getAsJsonObject("data");
+                if (!data.has("dash") || data.get("dash").isJsonNull()) {
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "获取音频URL失败: 无dash音频流", Toast.LENGTH_SHORT).show());
+                    callback.onResult(null);
+                    return;
+                }
+                JsonObject dash = data.getAsJsonObject("dash");
+                if (!dash.has("audio") || dash.get("audio").isJsonNull()) {
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "获取音频URL失败: 无音频流", Toast.LENGTH_SHORT).show());
+                    callback.onResult(null);
+                    return;
+                }
+                JsonArray audioArray = dash.getAsJsonArray("audio");
+                if (audioArray == null || audioArray.size() == 0) {
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "获取音频URL失败: 音频流为空", Toast.LENGTH_SHORT).show());
+                    callback.onResult(null);
+                    return;
+                }
 
                 // 防止没有高质量音频
                 String audioUrl;
@@ -3511,55 +4526,30 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                     audioUrl = audioArray.get(0).getAsJsonObject().get("baseUrl").getAsString();
                 }
                 Log.i("BiliMusic", "获取到的音频URL: " + audioUrl);
-
-                // Step 3: 下载音频文件
-                Request downloadReq = new Request.Builder()
-                        .url(audioUrl)
-                        .addHeader("User-Agent", "Mozilla/5.0")
-                        .addHeader("Referer", "https://www.bilibili.com/")
-                        .build();
-
-                client.newCall(downloadReq).enqueue(new Callback() {
-                    @Override
-                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        runOnUiThread(() -> Toast
-                                .makeText(MainActivity.this, "下载失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
-                        callback.onResult(null);
+                int durationSec = 0;
+                if (data.has("timelength") && !data.get("timelength").isJsonNull()) {
+                    try {
+                        durationSec = Math.max(0, data.get("timelength").getAsInt() / 1000);
+                    } catch (Exception ignored) {
+                        durationSec = 0;
                     }
+                }
 
-                    @Override
-                    public void onResponse(@NonNull Call call, @NonNull Response response) {
-                        // 生成唯一文件名（对于合集视频使用bv_cid格式）
-                        String fileName = bv + "_" + cid + ".mp3";
-                        File audioFile = new File(MainActivity.this.getExternalFilesDir("audio"), fileName);
-                        try (InputStream in = response.body().byteStream();
-                             FileOutputStream out = new FileOutputStream(audioFile)) {
-                            byte[] buffer = new byte[4096];
-                            int len;
-                            while ((len = in.read(buffer)) != -1) {
-                                out.write(buffer, 0, len);
-                            }
+                if (coverUrl != null && !coverUrl.isEmpty()) {
+                    MusicCoverUtils.preloadCover(coverUrl, MainActivity.this);
+                }
 
-                            // 预加载封面到缓存
-                            if (coverUrl != null && !coverUrl.isEmpty()) {
-                                MusicCoverUtils.preloadCover(coverUrl, MainActivity.this);
-                            }
-
-                            // 把东西放一起返回，包括封面URL
-                            Map<String, Object> result = new HashMap<>();
-                            result.put("file", audioFile);
-                            result.put("title", title);
-                            result.put("coverUrl", coverUrl); // 添加封面URL
-
-                            callback.onResult(result);
-                        } catch (IOException e) {
-                            Log.e("BiliMusic", "下载文件失败: ", e);
-                            callback.onResult(null); // 获取失败
-                            runOnUiThread(() -> Toast
-                                    .makeText(MainActivity.this, "下载失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
-                        }
-                    }
-                });
+                Map<String, Object> result = new HashMap<>();
+                result.put("filePath", BiliAudioDownloadHelper.buildPlaceholderPath(bv, cid));
+                result.put("title", title);
+                result.put("coverUrl", coverUrl);
+                result.put("durationSec", durationSec);
+                result.put("bvid", bv);
+                result.put("cid", cid);
+                if (epId != null) {
+                    result.put("epId", epId);
+                }
+                callback.onResult(result);
             }
         });
     }
@@ -3614,7 +4604,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         }
         runOnUiThread(() -> {
             if (musicList == null || musicList.isEmpty()) {
-                albumArt.setImageResource(R.drawable.default_cover);
+                albumArt.setImageResource(R.drawable.default_playlist_cover);
                 return;
             }
 
@@ -3625,7 +4615,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             String coverUrl = coverUrlObj != null ? String.valueOf(coverUrlObj) : null;
 
             if (filePath == null || filePath.isEmpty()) {
-                albumArt.setImageResource(R.drawable.default_cover);
+                albumArt.setImageResource(R.drawable.default_playlist_cover);
                 return;
             }
             MusicCoverUtils.loadCoverSmart(filePath, coverUrl, this, albumArt);

@@ -252,7 +252,7 @@ public class SharePlaylistUtils {
                     // 在线歌曲
                     songObj.put("type", "online");
                     songObj.put("url", filePath);
-                } else if (filePath.contains("bilibili") || filePath.contains("BV") || filePath.contains("av")) {
+                } else if (filePath.startsWith("bili://") || filePath.contains("bilibili") || filePath.contains("BV") || filePath.contains("av")) {
                     // B站歌曲
                     songObj.put("type", "bili");
 
@@ -531,6 +531,10 @@ public class SharePlaylistUtils {
                 int duration = songJson.getInt("duration");
                 String coverUrl = songJson.optString("coverUrl", "");
 
+                if (duration >= 20000) {
+                    duration = duration / 1000;
+                }
+
                 if ("bili".equals(songType)) {
                     // 只计算B站歌曲数量，稍后处理
                     biliSongCount.incrementAndGet();
@@ -598,17 +602,26 @@ public class SharePlaylistUtils {
                 int duration = songJson.getInt("duration");
                 String bvid = songJson.getString("url");
 
+                if (duration >= 20000) {
+                    duration = duration / 1000;
+                }
+                final int durationFallback = duration;
+
                 // 处理B站歌曲
                 activity.getBiliMusic(bvid, activity, result -> {
                     try {
                         if (result != null) {
                             String title = (String) result.get("title");
-                            File f = (File) result.get("file");
                             String cover = (String) result.get("coverUrl");
-                            String path = f.getAbsolutePath();
+                            String path = (String) result.get("filePath");
+                            Object durationObj = result.get("durationSec");
+                            int resolvedDuration = durationObj instanceof Number ? ((Number) durationObj).intValue() : durationFallback;
+                            if (path == null || path.isEmpty()) {
+                                return;
+                            }
 
                             // 创建Song对象
-                            Song biliSong = new Song(duration, title, path, playlistName);
+                            Song biliSong = new Song(resolvedDuration, title, path, playlistName);
                             biliSong.setCoverUrl(cover);
 
                             synchronized (importedSongs) {

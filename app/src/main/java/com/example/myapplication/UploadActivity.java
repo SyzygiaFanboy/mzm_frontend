@@ -8,11 +8,21 @@ import android.database.Cursor;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.RenderEffect;
+import android.graphics.Shader;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.widget.CheckBox;
+import android.widget.EditText;
+import android.widget.ImageView;
+import android.content.SharedPreferences;
 import android.provider.MediaStore;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
-import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -20,17 +30,26 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+import androidx.appcompat.widget.Toolbar;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.myapplication.adapter.SelectedSongAdapter;
 import com.example.myapplication.model.SelectedSong;
+import com.example.myapplication.adapter.UploadLibrarySongAdapter;
+import com.example.myapplication.model.Song;
 import com.example.myapplication.network.BatchUploadTask;
+import com.example.myapplication.utils.BiliAudioDownloadHelper;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashMap;
+
+import java.util.Map;
 
 public class UploadActivity extends AppCompatActivity {
     private static final String TAG = "UploadActivity";
@@ -38,11 +57,26 @@ public class UploadActivity extends AppCompatActivity {
     private static final int REQUEST_PICK_AUDIO = 1002;
 
     private RecyclerView rvSelectedSongs;
+    private ImageView ivBgBlur;
+    private View vBgTint;
+
+    private RecyclerView rvLibrarySongs;
+    private TextView tvLibraryEmpty;
+    private TextView tvLibraryCount;
+    private TextView tvSelectedCount;
+    private CheckBox cbSelectAllLibrary;
+    private EditText etLibraryFilter;
+    private UploadLibrarySongAdapter libraryAdapter;
+    private final List<UploadLibrarySongAdapter.LibrarySong> libraryAllItems = new ArrayList<>();
+    private final List<UploadLibrarySongAdapter.LibrarySong> libraryFilteredItems = new ArrayList<>();
+    private boolean suppressSelectAllListener = false;
+
     private TextView tvEmptyHint;
     private Button btnUploadSongs;
     private SelectedSongAdapter adapter;
     private List<SelectedSong> selectedSongs;
 
+    private final Map<String, SelectedSong> selectedByKey = new HashMap<>();
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -54,20 +88,60 @@ public class UploadActivity extends AppCompatActivity {
     }
 
     private void initViews() {
-        ImageButton btnBack = findViewById(R.id.btnBack);
+        ivBgBlur = findViewById(R.id.detail_bg_blur);
+        vBgTint = findViewById(R.id.detail_bg_tint);
+        applyPlaylistBackground();
+
+        View contentRoot = findViewById(R.id.contentRoot);
+        if (contentRoot != null) {
+            ViewCompat.setOnApplyWindowInsetsListener(contentRoot, (v, insets) -> {
+                int imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom;
+                v.setPadding(v.getPaddingLeft(), v.getPaddingTop(), v.getPaddingRight(), imeBottom);
+                return insets;
+            });
+        }
+
+        Toolbar toolbar = findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().setDisplayShowTitleEnabled(false);
+        }
+        toolbar.setNavigationIcon(R.drawable.ic_back);
+        toolbar.setNavigationOnClickListener(v -> finish());
+
+        rvLibrarySongs = findViewById(R.id.rvLibrarySongs);
+        tvLibraryEmpty = findViewById(R.id.tvLibraryEmpty);
+        tvLibraryCount = findViewById(R.id.tvLibraryCount);
+        tvSelectedCount = findViewById(R.id.tvSelectedCount);
+        cbSelectAllLibrary = findViewById(R.id.cbSelectAllLibrary);
+        etLibraryFilter = findViewById(R.id.etLibraryFilter);
+
         rvSelectedSongs = findViewById(R.id.rvSelectedSongs);
         tvEmptyHint = findViewById(R.id.tvEmptyHint);
         btnUploadSongs = findViewById(R.id.btnUploadSongs);
-
-        btnBack.setOnClickListener(v -> finish());
     }
-
     private void initData() {
         selectedSongs = new ArrayList<>();
         adapter = new SelectedSongAdapter(this, selectedSongs, this::removeSong);
         rvSelectedSongs.setLayoutManager(new LinearLayoutManager(this));
         rvSelectedSongs.setAdapter(adapter);
 
+
+        libraryAdapter = new UploadLibrarySongAdapter();
+        rvLibrarySongs.setLayoutManager(new LinearLayoutManager(this));
+        rvLibrarySongs.setAdapter(libraryAdapter);
+
+        libraryAdapter.setOnSelectionChangedListener((item, selected) -> {
+            if (selected) {
+                addSelectedFromLibrary(item);
+            } else {
+                removeSelectedByKey(item.key);
+            }
+            updateSelectionBar();
+            updateUI();
+        });
+
+        loadLibrarySongs();
         updateUI();
     }
 
@@ -77,6 +151,48 @@ public class UploadActivity extends AppCompatActivity {
             checkPermissionAndPickAudio();
         });
         btnUploadSongs.setOnClickListener(v -> uploadSongs());
+
+        cbSelectAllLibrary.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (suppressSelectAllListener) {
+                return;
+            }
+            if (libraryFilteredItems.isEmpty()) {
+                return;
+            }
+            for (UploadLibrarySongAdapter.LibrarySong it : libraryFilteredItems) {
+                if (it.selected != isChecked) {
+                    it.selected = isChecked;
+                    if (isChecked) {
+                        addSelectedFromLibrary(it);
+                    } else {
+                        removeSelectedByKey(it.key);
+                    }
+                }
+            }
+            libraryAdapter.notifyDataSetChanged();
+            updateSelectionBar();
+            updateUI();
+        });
+
+        etLibraryFilter.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                applyLibraryFilter();
+            }
+        });
+    }
+    @Override
+    protected void onResume() {
+        super.onResume();
+        applyPlaylistBackground();
     }
 
     private void checkPermissionAndPickAudio() {
@@ -161,29 +277,19 @@ public class UploadActivity extends AppCompatActivity {
         try {
             SelectedSong song = extractSongInfo(audioUri);
             if (song != null) {
-                // 检查是否已经添加过这首歌
-                boolean alreadyExists = selectedSongs.stream()
-                        .anyMatch(s -> {
-                            String sPath = s.getFilePath();
-                            String songPath = song.getFilePath();
-                            
-                            // 如果两个路径都不为null，比较路径
-                            if (sPath != null && songPath != null) {
-                                return sPath.equals(songPath);
-                            }
-                            
-                            // 如果路径为null，比较URI
-                            return s.getUri().equals(song.getUri());
-                        });
-    
-                if (!alreadyExists) {
-                    selectedSongs.add(song);
-                    adapter.notifyDataSetChanged();
-                    updateUI();
-                    Toast.makeText(this, "已添加: " + song.getSongName(), Toast.LENGTH_SHORT).show();
-                } else {
+                String key = makeSelectedKey(song);
+                if (key != null && selectedByKey.containsKey(key)) {
                     Toast.makeText(this, "该歌曲已经添加过了", Toast.LENGTH_SHORT).show();
+                    return;
                 }
+
+                selectedSongs.add(song);
+                if (key != null) {
+                    selectedByKey.put(key, song);
+                }
+                adapter.notifyDataSetChanged();
+                updateUI();
+                Toast.makeText(this, "已添加: " + song.getSongName(), Toast.LENGTH_SHORT).show();
             }
         } catch (Exception e) {
             Log.e(TAG, "添加歌曲失败", e);
@@ -251,6 +357,23 @@ public class UploadActivity extends AppCompatActivity {
     private void removeSong(int position) {
         if (position >= 0 && position < selectedSongs.size()) {
             SelectedSong removedSong = selectedSongs.remove(position);
+
+            String key = makeSelectedKey(removedSong);
+            if (key != null) {
+                selectedByKey.remove(key);
+                boolean changed = false;
+                for (UploadLibrarySongAdapter.LibrarySong it : libraryAllItems) {
+                    if (key.equals(it.key) && it.selected) {
+                        it.selected = false;
+                        changed = true;
+                        break;
+                    }
+                }
+                if (changed) {
+                    libraryAdapter.notifyDataSetChanged();
+                    updateSelectionBar();
+                }
+            }
             
             // 如果删除后列表为空，使用完整刷新
             if (selectedSongs.isEmpty()) {
@@ -274,6 +397,339 @@ public class UploadActivity extends AppCompatActivity {
         rvSelectedSongs.setVisibility(hasSongs ? View.VISIBLE : View.GONE);
         btnUploadSongs.setEnabled(hasSongs);
         btnUploadSongs.setText(hasSongs ? "上传 " + selectedSongs.size() + " 首歌曲" : "上传歌曲");
+    }
+
+    private void updateSelectionBar() {
+        int selectedCount = 0;
+        for (UploadLibrarySongAdapter.LibrarySong it : libraryAllItems) {
+            if (it.selected) {
+                selectedCount++;
+            }
+        }
+        tvSelectedCount.setText("已选 " + selectedCount);
+        suppressSelectAllListener = true;
+        cbSelectAllLibrary.setChecked(!libraryFilteredItems.isEmpty() && isAllFilteredSelected());
+        suppressSelectAllListener = false;
+    }
+
+    private boolean isAllFilteredSelected() {
+        for (UploadLibrarySongAdapter.LibrarySong it : libraryFilteredItems) {
+            if (!it.selected) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void addSelectedFromLibrary(UploadLibrarySongAdapter.LibrarySong item) {
+        if (item == null || item.key == null) {
+            return;
+        }
+        if (selectedByKey.containsKey(item.key)) {
+            return;
+        }
+        Uri uri = null;
+        if (item.uriStringForUpload != null && !item.uriStringForUpload.isEmpty()) {
+            try {
+                uri = Uri.parse(item.uriStringForUpload);
+            } catch (Exception ignored) {
+            }
+        }
+        SelectedSong song = new SelectedSong(
+                item.title,
+                item.artistForUpload,
+                item.durationMsForUpload,
+                item.filePathForUpload,
+                uri
+        );
+        if (item.coverUrlForPreview != null && !item.coverUrlForPreview.isEmpty()) {
+            song.setCoverUrl(item.coverUrlForPreview);
+        }
+        selectedSongs.add(song);
+        selectedByKey.put(item.key, song);
+        adapter.notifyDataSetChanged();
+    }
+
+    private void removeSelectedByKey(String key) {
+        if (key == null || key.isEmpty()) {
+            return;
+        }
+        SelectedSong existing = selectedByKey.remove(key);
+        if (existing != null) {
+            selectedSongs.remove(existing);
+            adapter.notifyDataSetChanged();
+        } else {
+            for (int i = selectedSongs.size() - 1; i >= 0; i--) {
+                SelectedSong s = selectedSongs.get(i);
+                String k = makeSelectedKey(s);
+                if (key.equals(k)) {
+                    selectedSongs.remove(i);
+                }
+            }
+            adapter.notifyDataSetChanged();
+        }
+    }
+
+    private String makeSelectedKey(SelectedSong song) {
+        if (song == null) {
+            return null;
+        }
+        if (song.getFilePath() != null && !song.getFilePath().isEmpty()) {
+            return normalizeFilePath(song.getFilePath());
+        }
+        if (song.getUri() != null) {
+            return song.getUri().toString();
+        }
+        return null;
+    }
+
+    private void loadLibrarySongs() {
+        libraryAllItems.clear();
+        try {
+            List<Song> localSongs = MusicLoader.loadAllLocalSongs(this);
+            for (Song s : localSongs) {
+                UploadLibrarySongAdapter.LibrarySong item = toLibraryItem(s);
+                if (item != null) {
+                    libraryAllItems.add(item);
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "加载本地音乐库失败", e);
+        }
+
+        tvLibraryCount.setText("(" + libraryAllItems.size() + ")");
+        applyLibraryFilter();
+    }
+
+    private void applyLibraryFilter() {
+        String q = etLibraryFilter != null ? etLibraryFilter.getText().toString().trim().toLowerCase() : "";
+        libraryFilteredItems.clear();
+        if (q.isEmpty()) {
+            libraryFilteredItems.addAll(libraryAllItems);
+        } else {
+            for (UploadLibrarySongAdapter.LibrarySong it : libraryAllItems) {
+                String t = it.title != null ? it.title.toLowerCase() : "";
+                String sub = it.subtitle != null ? it.subtitle.toLowerCase() : "";
+                if (t.contains(q) || sub.contains(q)) {
+                    libraryFilteredItems.add(it);
+                }
+            }
+        }
+
+        boolean empty = libraryFilteredItems.isEmpty();
+        tvLibraryEmpty.setVisibility(empty ? View.VISIBLE : View.GONE);
+        rvLibrarySongs.setVisibility(empty ? View.GONE : View.VISIBLE);
+        libraryAdapter.submitList(new ArrayList<>(libraryFilteredItems));
+        updateSelectionBar();
+    }
+
+    private UploadLibrarySongAdapter.LibrarySong toLibraryItem(Song song) {
+        if (song == null) {
+            return null;
+        }
+        String raw = song.getFilePath();
+        if (raw == null || raw.isEmpty()) {
+            return null;
+        }
+        if (BiliAudioDownloadHelper.isBiliPath(raw)) {
+            String name = song.getName() != null ? song.getName() : "未知歌曲";
+            String artist = "未知艺术家";
+            String title = name;
+            int split = name.indexOf(" - ");
+            if (split > 0 && split < name.length() - 3) {
+                artist = name.substring(0, split).trim();
+                title = name.substring(split + 3).trim();
+            }
+            int durationSec = Math.max(0, song.getRawDuration());
+            String subtitle = song.getPlaylist() != null && !song.getPlaylist().isEmpty()
+                    ? ("歌单: " + song.getPlaylist() + " | B站在线音频")
+                    : "B站在线音频";
+            return new UploadLibrarySongAdapter.LibrarySong(
+                    raw,
+                    title,
+                    subtitle,
+                    formatDuration(durationSec),
+                    artist,
+                    durationSec * 1000,
+                    raw,
+                    null,
+                    song.getCoverUrl()
+            );
+        }
+
+        String filePath = normalizeFilePath(raw);
+        Uri uri;
+        String lower = raw.toLowerCase();
+        if (lower.startsWith("content://") || lower.startsWith("file://")) {
+            uri = Uri.parse(raw);
+        } else {
+            File f = new File(filePath);
+            if (!f.exists()) {
+                return null;
+            }
+            uri = Uri.fromFile(f);
+        }
+
+        String name = song.getName() != null ? song.getName() : "未知歌曲";
+        String artist = "未知艺术家";
+        String title = name;
+        int split = name.indexOf(" - ");
+        if (split > 0 && split < name.length() - 3) {
+            artist = name.substring(0, split).trim();
+            title = name.substring(split + 3).trim();
+        }
+
+        int durationSec = Math.max(0, song.getRawDuration());
+        String durationText = formatDuration(durationSec);
+        int durationMs = durationSec * 1000;
+
+        String subtitle = song.getPlaylist() != null && !song.getPlaylist().isEmpty() ? ("歌单: " + song.getPlaylist()) : "";
+        String key = filePath != null && !filePath.isEmpty() ? filePath : uri.toString();
+        String coverUrl = song.getCoverUrl();
+        UploadLibrarySongAdapter.LibrarySong item = new UploadLibrarySongAdapter.LibrarySong(
+                key,
+                title,
+                subtitle,
+                durationText,
+                artist,
+                durationMs,
+                filePath,
+                uri.toString(),
+                coverUrl
+        );
+        return item;
+    }
+
+    private String normalizeFilePath(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        try {
+            Uri u = Uri.parse(raw);
+            if ("file".equalsIgnoreCase(u.getScheme())) {
+                String p = u.getPath();
+                if (p != null && !p.isEmpty()) {
+                    return p;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return raw;
+    }
+
+    private String formatDuration(int seconds) {
+        int minutes = seconds / 60;
+        int remainingSeconds = seconds % 60;
+        return String.format("%d:%02d", minutes, remainingSeconds);
+    }
+
+    private void applyPlaylistBackground() {
+        if (ivBgBlur == null || vBgTint == null) {
+            return;
+        }
+        SharedPreferences prefs = getSharedPreferences("background_prefs", MODE_PRIVATE);
+        String playlistBgPath = prefs.getString("playlist_background_path", null);
+        int transparency = prefs.getInt("playlist_background_path_transparency", 180);
+        int blurRadius = prefs.getInt("playlist_background_path_blur", 0);
+        if (playlistBgPath == null || !new File(playlistBgPath).exists()) {
+            // 背景未设置时：跟随歌单页面背景，直接清空，不再兜底使用 background.jpg
+            ivBgBlur.setImageDrawable(null);
+            ivBgBlur.setAlpha(0f);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                ivBgBlur.setRenderEffect(null);
+            }
+            return;
+        }
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int screenHeight = getResources().getDisplayMetrics().heightPixels;
+        new Thread(() -> {
+            Bitmap out = null;
+            try {
+                Bitmap original = decodeSampledBitmapFromFile(playlistBgPath, screenWidth, screenHeight);
+                if (original != null) {
+                    Bitmap scaled = createScaledBitmap(original, screenWidth, screenHeight);
+                    if (original != scaled) {
+                        original.recycle();
+                    }
+                    out = scaled;
+                }
+            } catch (Exception ignored) {
+            }
+            Bitmap finalOut = out;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) {
+                    if (finalOut != null) {
+                        finalOut.recycle();
+                    }
+                    return;
+                }
+                if (finalOut != null) {
+                    ivBgBlur.setImageBitmap(finalOut);
+                    ivBgBlur.setAlpha(Math.min(1f, Math.max(0f, transparency / 255f)));
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        if (blurRadius > 0) {
+                            float r = Math.min(25f, Math.max(0f, blurRadius));
+                            ivBgBlur.setRenderEffect(RenderEffect.createBlurEffect(r, r, Shader.TileMode.CLAMP));
+                        } else {
+                            ivBgBlur.setRenderEffect(null);
+                        }
+                    }
+                } else {
+                    ivBgBlur.setImageDrawable(null);
+                    ivBgBlur.setAlpha(0f);
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        ivBgBlur.setRenderEffect(null);
+                    }
+                }
+            });
+        }).start();
+    }
+
+    private Bitmap decodeSampledBitmapFromFile(String path, int reqWidth, int reqHeight) {
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(path, options);
+        options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight);
+        options.inJustDecodeBounds = false;
+        options.inPreferredConfig = Bitmap.Config.RGB_565;
+        return BitmapFactory.decodeFile(path, options);
+    }
+
+    private int calculateInSampleSize(BitmapFactory.Options options, int reqWidth, int reqHeight) {
+        int height = options.outHeight;
+        int width = options.outWidth;
+        int inSampleSize = 1;
+        if (height > reqHeight || width > reqWidth) {
+            int halfHeight = height / 2;
+            int halfWidth = width / 2;
+            while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2;
+            }
+        }
+        return Math.max(1, inSampleSize);
+    }
+
+    private Bitmap createScaledBitmap(Bitmap originalBitmap, int targetWidth, int targetHeight) {
+        int originalWidth = originalBitmap.getWidth();
+        int originalHeight = originalBitmap.getHeight();
+        float scaleX = (float) targetWidth / originalWidth;
+        float scaleY = (float) targetHeight / originalHeight;
+        float scale = Math.max(scaleX, scaleY);
+        int scaledWidth = Math.round(originalWidth * scale);
+        int scaledHeight = Math.round(originalHeight * scale);
+        Bitmap scaledBitmap = Bitmap.createScaledBitmap(originalBitmap, scaledWidth, scaledHeight, true);
+        if (scaledWidth > targetWidth || scaledHeight > targetHeight) {
+            int x = Math.max(0, (scaledWidth - targetWidth) / 2);
+            int y = Math.max(0, (scaledHeight - targetHeight) / 2);
+            Bitmap cropped = Bitmap.createBitmap(scaledBitmap, x, y,
+                    Math.min(targetWidth, scaledWidth),
+                    Math.min(targetHeight, scaledHeight));
+            if (scaledBitmap != cropped) {
+                scaledBitmap.recycle();
+            }
+            return cropped;
+        }
+        return scaledBitmap;
     }
 
     private void uploadSongs() {

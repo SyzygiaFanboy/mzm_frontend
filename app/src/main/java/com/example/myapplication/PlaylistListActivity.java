@@ -1,8 +1,10 @@
 package com.example.myapplication;
 
+import android.Manifest;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -44,7 +46,11 @@ import com.example.myapplication.adapter.PlaylistItemTouchHelperCallback;
 import com.example.myapplication.adapter.PlaylistRecyclerAdapter;
 import com.example.myapplication.model.Playlist;
 import com.example.myapplication.model.Song;
+import com.example.myapplication.utils.BiliFavService;
+import com.example.myapplication.utils.BiliPlaylistSyncManager;
+import com.example.myapplication.utils.BiliSeasonsSeriesService;
 import com.example.myapplication.utils.SongDeletionUtils;
+import com.example.myapplication.utils.UiAutoRefreshHelper;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -56,9 +62,14 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
+import okhttp3.OkHttpClient;
+
 public class PlaylistListActivity extends AppCompatActivity implements PlaylistRecyclerAdapter.OnStartDragListener {
+    private static final int BACKGROUND_PLAYLIST = 0;
+    private static final int BACKGROUND_PLAYBACK = 1;
     private List<Playlist> playlists = new ArrayList<>();
     private PlaylistRecyclerAdapter adapter;
     private ItemTouchHelper itemTouchHelper;
@@ -67,18 +78,36 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
     private DrawerLayout drawerLayout;
     private ActionBarDrawerToggle toggle;
     private static final int REQUEST_CODE_SEARCH = 1001;
+    private static final int REQUEST_CODE_NOTIFICATIONS = 2001;
 
     // 新增的变量
     private ActivityResultLauncher<Intent> imagePickerLauncher;
-    private int listBackgroundType = 0;
-    private int currentBackgroundType = 0; // 等于 listBackgroundType: 歌单页面, 反之: 播放页面
+    private int currentBackgroundType = BACKGROUND_PLAYLIST;
     
     private MusicPlayer musicPlayer;
+    private final OkHttpClient biliHttpClient = new OkHttpClient();
+    private String lastPlaylistStoreSnapshot = null;
+    private final UiAutoRefreshHelper playlistUiAutoRefresh = new UiAutoRefreshHelper(1200L, this::refreshPlaylistUiIfNeeded);
+
+    private static final class BiliBindTarget {
+        final String type;
+        final String id;
+        final String title;
+        final int mediaCount;
+
+        BiliBindTarget(String type, String id, String title, int mediaCount) {
+            this.type = type;
+            this.id = id;
+            this.title = title;
+            this.mediaCount = mediaCount;
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_playlist_list);
+        ensureNotificationPermission();
 
         // 初始化图片选择器
         imagePickerLauncher = registerForActivityResult(
@@ -97,10 +126,17 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         ImageButton btnNew = findViewById(R.id.btnNewPlaylist);
         ImageButton btnDelete = findViewById(R.id.btnDeletePlaylist);
         ImageButton btnUpload = findViewById(R.id.btnUpload);
+        ImageButton btnExport = findViewById(R.id.btnExport);
         btnUpload.setOnClickListener(v -> {
             Intent intent = new Intent(PlaylistListActivity.this, UploadActivity.class);
             startActivity(intent);
         });
+        if (btnExport != null) {
+            btnExport.setOnClickListener(v -> {
+                Intent intent = new Intent(PlaylistListActivity.this, ExportSongsActivity.class);
+                startActivity(intent);
+            });
+        }
         ImageButton btnMore = findViewById(R.id.btnMore);
         ConstraintLayout manageBar = findViewById(R.id.manageBar);
         CheckBox cbSelectAll = findViewById(R.id.cbSelectAll);
@@ -262,7 +298,11 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         */
         findViewById(R.id.menu_logout).setOnClickListener(v -> {
             SharedPreferences preferences = getSharedPreferences("user_pref", MODE_PRIVATE);
-            preferences.edit().putBoolean("is_logged_in", false).apply();
+            preferences.edit()
+                    .putBoolean("is_logged_in", false)
+                    .putBoolean("is_admin", false)
+                    .remove("username")
+                    .apply();
 
             MusicPlayer player = ((MyApp) getApplication()).getMusicPlayer();
             if (player.isPlaying() || player.isPaused()) {
@@ -273,11 +313,34 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
             finish();
         });
 
+        View adminUsersBtn = findViewById(R.id.menu_admin_users);
+        if (adminUsersBtn != null) {
+            SharedPreferences preferences = getSharedPreferences("user_pref", MODE_PRIVATE);
+            boolean isAdmin = preferences.getBoolean("is_admin", false);
+            adminUsersBtn.setVisibility(isAdmin ? View.VISIBLE : View.GONE);
+            adminUsersBtn.setOnClickListener(v -> {
+                startActivity(new Intent(this, AdminUsersActivity.class));
+                drawerLayout.closeDrawer(GravityCompat.START);
+            });
+        }
+
         // 添加设置按钮点击事件
         findViewById(R.id.menu_item1).setOnClickListener(v -> {
             showSettingsDialog();
             drawerLayout.closeDrawer(GravityCompat.START);
         });
+
+        findViewById(R.id.menu_item2).setOnClickListener(v -> {
+            startActivity(new Intent(this, AboutActivity.class));
+            drawerLayout.closeDrawer(GravityCompat.START);
+        });
+
+        View btnServer = findViewById(R.id.btnServer);
+        if (btnServer != null) {
+            btnServer.setOnClickListener(v -> {
+                startActivity(new Intent(this, OnlineMusicActivity.class));
+            });
+        }
 
         // 应用保存的背景图片
         applyBackgroundImage();
@@ -323,23 +386,393 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         });
     }
     private void showSettingsDialog() {
-        // 史山魅力时刻：根据 currentBackgroundType 来修改歌单还是播放页背景。存 listBackgroundType 好自由修改选项位置
-        String[] options = {"设置歌单页面背景", "设置播放页面背景", "恢复默认背景"};
-        listBackgroundType = Arrays.asList(options).indexOf("设置歌单页面背景");
+        String[] options = {"绑定B站UID/收藏夹/合集系列", "设置歌单页面背景", "设置播放页面背景", "恢复默认背景"};
 
         new AlertDialog.Builder(this)
-                .setTitle("背景设置")
+                .setTitle("设置")
                 .setItems(options, (dialog, which) -> {
-                    if (which == 2) {
+                    if (which == 0) {
+                        showBindBiliUidDialog();
+                        return;
+                    }
+                    if (which == 3) {
                         // 恢复默认背景
                         showRestoreDefaultDialog();
                     } else {
-                        currentBackgroundType = which;
+                        currentBackgroundType = which == 1 ? BACKGROUND_PLAYLIST : BACKGROUND_PLAYBACK;
                         openImagePicker();
                     }
                 })
                 .setNegativeButton("取消", null)
                 .show();
+    }
+
+    private void showBindBiliUidDialog() {
+        EditText etUid = new EditText(this);
+        etUid.setHint("输入B站UID");
+
+        String prefill = null;
+        for (Playlist p : playlists) {
+            if (p != null && p.isBiliBound() && p.getBiliUid() != null && !p.getBiliUid().isEmpty()) {
+                prefill = p.getBiliUid();
+                break;
+            }
+        }
+        if (prefill != null) {
+            etUid.setText(prefill);
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("绑定B站UID")
+                .setView(etUid)
+                .setPositiveButton("下一步", (d, w) -> {
+                    String uid = etUid.getText() != null ? etUid.getText().toString().trim() : "";
+                    uid = uid.replace("UID:", "").trim();
+                    if (!uid.matches("\\d+")) {
+                        Toast.makeText(this, "请输入正确的UID", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    startBindFlow(uid);
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void startBindFlow(String uid) {
+        Toast.makeText(this, "正在读取公开收藏夹与合集/系列…", Toast.LENGTH_SHORT).show();
+
+        final BiliFavService.UserInfo[] userInfoRef = {new BiliFavService.UserInfo(uid, uid, null)};
+        final List<BiliFavService.FavFolder>[] folderRef = new List[]{new ArrayList<>()};
+        final List<BiliSeasonsSeriesService.CollectionItem>[] collectionRef = new List[]{new ArrayList<>()};
+        final int[] remaining = {3};
+
+        Runnable tryContinue = () -> {
+            remaining[0]--;
+            if (remaining[0] > 0) {
+                return;
+            }
+            List<BiliFavService.FavFolder> folders = folderRef[0] != null ? folderRef[0] : new ArrayList<>();
+            List<BiliSeasonsSeriesService.CollectionItem> collections = collectionRef[0] != null ? collectionRef[0] : new ArrayList<>();
+            if (folders.isEmpty() && collections.isEmpty()) {
+                Toast.makeText(this, "未获取到公开收藏夹或合集/系列", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            showBiliBindingPickDialog(userInfoRef[0], folders, collections);
+        };
+
+        BiliFavService.fetchUserInfo(biliHttpClient, uid, userInfo -> {
+            if (userInfo != null) {
+                userInfoRef[0] = userInfo;
+            }
+            tryContinue.run();
+        });
+
+        BiliFavService.fetchFolders(biliHttpClient, uid, folders -> {
+            folderRef[0] = folders != null ? folders : new ArrayList<>();
+            tryContinue.run();
+        });
+
+        BiliSeasonsSeriesService.fetchCollections(biliHttpClient, uid, collections -> {
+            collectionRef[0] = collections != null ? collections : new ArrayList<>();
+            tryContinue.run();
+        });
+    }
+
+    private void showBiliBindingPickDialog(BiliFavService.UserInfo userInfo,
+                                           List<BiliFavService.FavFolder> folders,
+                                           List<BiliSeasonsSeriesService.CollectionItem> collections) {
+        List<BiliBindTarget> targets = new ArrayList<>();
+        if (folders != null) {
+            for (BiliFavService.FavFolder folder : folders) {
+                targets.add(new BiliBindTarget(Playlist.BILI_BIND_TYPE_FAV, folder.mediaId, folder.title, folder.mediaCount));
+            }
+        }
+        if (collections != null) {
+            for (BiliSeasonsSeriesService.CollectionItem item : collections) {
+                targets.add(new BiliBindTarget(item.type, item.id, item.title, item.mediaCount));
+            }
+        }
+        int n = targets.size();
+        String[] items = new String[n];
+        boolean[] checked = new boolean[n];
+        for (int i = 0; i < n; i++) {
+            BiliBindTarget target = targets.get(i);
+            items[i] = getBiliBindTypeLabel(target.type) + target.title + " (" + target.mediaCount + ")";
+            checked[i] = false;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("选择要追加绑定的收藏夹/合集/系列")
+                .setMultiChoiceItems(items, checked, (dialog, which, isChecked) -> checked[which] = isChecked)
+                .setPositiveButton("绑定并同步", (dialog, which) -> {
+                    List<BiliBindTarget> selected = new ArrayList<>();
+                    for (int i = 0; i < n; i++) {
+                        if (checked[i]) {
+                            selected.add(targets.get(i));
+                        }
+                    }
+                    if (selected.isEmpty()) {
+                        Toast.makeText(this, "请至少选择一个收藏夹、合集或系列", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    applyBiliBinding(userInfo, selected);
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void applyBiliBinding(BiliFavService.UserInfo userInfo, List<BiliBindTarget> selectedTargets) {
+        List<String> playlistNamesToSync = new ArrayList<>();
+        final int[] createdCount = {0};
+        final int[] reusedCount = {0};
+
+        for (BiliBindTarget target : selectedTargets) {
+            Playlist existing = findExistingBiliBoundPlaylist(userInfo.uid, target);
+            if (existing != null) {
+                fillBiliPlaylistMeta(existing, userInfo, target);
+                playlistNamesToSync.add(existing.getName());
+                reusedCount[0]++;
+                continue;
+            }
+
+            String plName = ensureUniquePlaylistName(buildBiliPlaylistName(userInfo, target));
+            Playlist p = new Playlist(plName, 0, R.drawable.default_playlist_cover);
+            fillBiliPlaylistMeta(p, userInfo, target);
+            playlists.add(p);
+            playlistNamesToSync.add(plName);
+            createdCount[0]++;
+        }
+
+        savePlaylist();
+        adapter.notifyDataSetChanged();
+
+        AlertDialog progressDialog = createSyncProgressDialog();
+        progressDialog.show();
+
+        final int total = selectedTargets.size();
+        final int[] done = {0};
+        final int[] failedCount = {0};
+        for (int i = 0; i < selectedTargets.size(); i++) {
+            BiliBindTarget target = selectedTargets.get(i);
+            String plName = playlistNamesToSync.get(i);
+            updateSyncProgressDialog(progressDialog, done[0], total, "正在同步: " + plName);
+            syncBiliBindTarget(userInfo.uid, target, plName, songCount -> runOnUiThread(() -> {
+                done[0]++;
+                if (songCount < 0) {
+                    failedCount[0]++;
+                    updateSyncProgressDialog(progressDialog, done[0], total, "同步失败，已保留原内容: " + plName);
+                } else {
+                    updateSyncProgressDialog(progressDialog, done[0], total, "已同步: " + plName + " (" + songCount + "首)");
+                }
+                if (done[0] >= total) {
+                    progressDialog.dismiss();
+                    loadPlaylists();
+                    updateAllSongCounts();
+                    String message = failedCount[0] > 0
+                            ? "部分绑定同步失败，已保留原有内容"
+                            : createdCount[0] > 0 && reusedCount[0] > 0
+                            ? "已追加绑定并同步，已有绑定也已刷新"
+                            : createdCount[0] > 0
+                            ? "已追加绑定并同步"
+                            : "所选内容已重新同步";
+                    Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+                }
+            }));
+        }
+    }
+
+    private void syncBiliBindTarget(String uid, BiliBindTarget target, String playlistName, BiliPlaylistSyncManager.SyncCallback callback) {
+        if (Playlist.BILI_BIND_TYPE_SEASON.equals(target.type)) {
+            BiliPlaylistSyncManager.syncBoundSeasonToPlaylist(this, biliHttpClient, uid, target.id, playlistName, callback);
+            return;
+        }
+        if (Playlist.BILI_BIND_TYPE_SERIES.equals(target.type)) {
+            BiliPlaylistSyncManager.syncBoundSeriesToPlaylist(this, biliHttpClient, uid, target.id, playlistName, callback);
+            return;
+        }
+        BiliPlaylistSyncManager.syncBoundFolderToPlaylist(this, biliHttpClient, uid, target.id, playlistName, callback);
+    }
+
+    private void fillBiliPlaylistMeta(Playlist playlist, BiliFavService.UserInfo userInfo, BiliBindTarget target) {
+        if (playlist == null || userInfo == null || target == null) {
+            return;
+        }
+        String uid = userInfo.uid != null && !userInfo.uid.trim().isEmpty()
+                ? userInfo.uid.trim()
+                : playlist.getBiliUid();
+        String displayName = chooseBetterDisplayName(playlist.getBiliUserName(), userInfo.name, uid);
+        String avatarUrl = chooseBetterAvatarUrl(playlist.getBiliAvatarUrl(), userInfo.avatarUrl);
+        playlist.setBiliBound(true);
+        playlist.setBiliUid(uid);
+        playlist.setBiliUserName(displayName);
+        playlist.setBiliAvatarUrl(avatarUrl);
+        playlist.setBiliBindingType(target.type);
+        playlist.setBiliFolderId(null);
+        playlist.setBiliFolderTitle(null);
+        playlist.setBiliSeasonId(null);
+        playlist.setBiliSeasonTitle(null);
+        playlist.setBiliSeriesId(null);
+        playlist.setBiliSeriesTitle(null);
+        if (Playlist.BILI_BIND_TYPE_FAV.equals(target.type)) {
+            playlist.setBiliFolderId(target.id);
+            playlist.setBiliFolderTitle(target.title);
+        } else if (Playlist.BILI_BIND_TYPE_SEASON.equals(target.type)) {
+            playlist.setBiliSeasonId(target.id);
+            playlist.setBiliSeasonTitle(target.title);
+        } else if (Playlist.BILI_BIND_TYPE_SERIES.equals(target.type)) {
+            playlist.setBiliSeriesId(target.id);
+            playlist.setBiliSeriesTitle(target.title);
+        }
+    }
+
+    private Playlist findExistingBiliBoundPlaylist(String uid, BiliBindTarget target) {
+        if (uid == null || uid.isEmpty() || target == null) {
+            return null;
+        }
+        for (Playlist playlist : playlists) {
+            if (playlist == null || !playlist.isBiliBound()) {
+                continue;
+            }
+            if (!uid.equals(playlist.getBiliUid())) {
+                continue;
+            }
+            String bindingType = playlist.getEffectiveBiliBindingType();
+            if (!target.type.equals(bindingType)) {
+                continue;
+            }
+            String boundId = null;
+            if (Playlist.BILI_BIND_TYPE_FAV.equals(target.type)) {
+                boundId = playlist.getBiliFolderId();
+            } else if (Playlist.BILI_BIND_TYPE_SEASON.equals(target.type)) {
+                boundId = playlist.getBiliSeasonId();
+            } else if (Playlist.BILI_BIND_TYPE_SERIES.equals(target.type)) {
+                boundId = playlist.getBiliSeriesId();
+            }
+            if (target.id.equals(boundId)) {
+                return playlist;
+            }
+        }
+        return null;
+    }
+
+    private String ensureUniquePlaylistName(String baseName) {
+        if (!playlistNameExists(baseName)) {
+            return baseName;
+        }
+        int suffix = 2;
+        while (playlistNameExists(baseName + "-" + suffix)) {
+            suffix++;
+        }
+        return baseName + "-" + suffix;
+    }
+
+    private boolean playlistNameExists(String playlistName) {
+        if (playlistName == null || playlistName.isEmpty()) {
+            return false;
+        }
+        for (Playlist playlist : playlists) {
+            if (playlist != null && playlistName.equals(playlist.getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String buildBiliPlaylistName(BiliFavService.UserInfo userInfo, BiliBindTarget target) {
+        if (target == null) {
+            return "B站歌单";
+        }
+        String userLabel = userInfo != null && userInfo.name != null && !userInfo.name.trim().isEmpty()
+                ? userInfo.name.trim()
+                : userInfo != null && userInfo.uid != null && !userInfo.uid.trim().isEmpty()
+                ? "UID" + userInfo.uid.trim()
+                : "用户";
+        if (Playlist.BILI_BIND_TYPE_SEASON.equals(target.type)) {
+            return "B站合集-" + userLabel + "-" + target.title;
+        }
+        if (Playlist.BILI_BIND_TYPE_SERIES.equals(target.type)) {
+            return "B站系列-" + userLabel + "-" + target.title;
+        }
+        return "B站收藏夹-" + userLabel + "-" + target.title;
+    }
+
+    private String getBiliBindTypeLabel(String type) {
+        if (Playlist.BILI_BIND_TYPE_SEASON.equals(type)) {
+            return "[合集] ";
+        }
+        if (Playlist.BILI_BIND_TYPE_SERIES.equals(type)) {
+            return "[系列] ";
+        }
+        return "[收藏夹] ";
+    }
+
+    private String chooseBetterDisplayName(String preferred, String fallback, String uid) {
+        if (isMeaningfulDisplayName(preferred, uid)) {
+            return preferred.trim();
+        }
+        if (isMeaningfulDisplayName(fallback, uid)) {
+            return fallback.trim();
+        }
+        return uid != null && !uid.trim().isEmpty() ? uid.trim() : "B站用户";
+    }
+
+    private boolean isMeaningfulDisplayName(String value, String uid) {
+        if (value == null || value.trim().isEmpty()) {
+            return false;
+        }
+        return uid == null || !value.trim().equals(uid.trim());
+    }
+
+    private String chooseBetterAvatarUrl(String preferred, String fallback) {
+        if (isMeaningfulAvatarUrl(preferred)) {
+            return preferred.trim();
+        }
+        if (isMeaningfulAvatarUrl(fallback)) {
+            return fallback.trim();
+        }
+        return null;
+    }
+
+    private boolean isMeaningfulAvatarUrl(String value) {
+        return value != null && !value.trim().isEmpty() && !"null".equalsIgnoreCase(value.trim());
+    }
+
+    private AlertDialog createSyncProgressDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(50, 30, 50, 10);
+
+        android.widget.ProgressBar bar = new android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        bar.setId(android.R.id.progress);
+        bar.setMax(100);
+        bar.setProgress(0);
+        layout.addView(bar);
+
+        android.widget.TextView tv = new android.widget.TextView(this);
+        tv.setId(android.R.id.text1);
+        tv.setPadding(0, 20, 0, 0);
+        layout.addView(tv);
+
+        return new AlertDialog.Builder(this)
+                .setTitle("同步中")
+                .setView(layout)
+                .setCancelable(false)
+                .create();
+    }
+
+    private void updateSyncProgressDialog(AlertDialog dialog, int done, int total, String message) {
+        if (dialog == null) {
+            return;
+        }
+        android.widget.ProgressBar bar = dialog.findViewById(android.R.id.progress);
+        android.widget.TextView tv = dialog.findViewById(android.R.id.text1);
+        int progress = total <= 0 ? 0 : (done * 100 / total);
+        if (bar != null) {
+            bar.setProgress(progress);
+        }
+        if (tv != null) {
+            tv.setText(message);
+        }
     }
 
     private void showRestoreDefaultDialog() {
@@ -540,7 +973,7 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
                             .setView(dialogView)
                             .setPositiveButton("确认", (dialogInterface, i) -> {
                                 saveProcessedBackground(imageUri, backgroundType, transparency[0], blurRadius[0]);
-                                if (backgroundType != listBackgroundType) {
+                                if (backgroundType == BACKGROUND_PLAYBACK) {
                                     // 如果修改播放页面背景，还原回去
                                     drawerLayout.setBackground(originalBackground);
                                 }
@@ -595,7 +1028,7 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
             }
 
             // 确定文件名
-            String fileName = (backgroundType == listBackgroundType) ? "playlist_background.jpg" : "playback_background.jpg";
+            String fileName = (backgroundType == BACKGROUND_PLAYLIST) ? "playlist_background.jpg" : "playback_background.jpg";
             File backgroundFile = new File(backgroundDir, fileName);
 
             // 直接获取当前显示的背景图
@@ -614,7 +1047,7 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
 
             // 保存设置到SharedPreferences
             SharedPreferences prefs = getSharedPreferences("background_prefs", MODE_PRIVATE);
-            String key = (backgroundType == listBackgroundType) ? "playlist_background_path" : "playback_background_path";
+            String key = (backgroundType == BACKGROUND_PLAYLIST) ? "playlist_background_path" : "playback_background_path";
             prefs.edit()
                     .putString(key, backgroundFile.getAbsolutePath())
                     .putInt(key + "_transparency", transparency)
@@ -786,6 +1219,16 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         return scaledBitmap;
     }
 
+    private void ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT < 33) {
+            return;
+        }
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_CODE_NOTIFICATIONS);
+    }
+
     @Override
     public void onStartDrag(PlaylistRecyclerAdapter.ViewHolder holder) {
         itemTouchHelper.startDrag(holder);
@@ -817,6 +1260,13 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
         globalManager.attachToActivity(this);
         globalManager.forceRefresh();
+        playlistUiAutoRefresh.start();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        playlistUiAutoRefresh.stop();
     }
 
     // 添加更新当前播放歌单高亮的方法
@@ -934,6 +1384,7 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
         }
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         String playlistsJson = Playlist.toJson(playlists);
+        lastPlaylistStoreSnapshot = playlistsJson;
         prefs.edit().putString(KEY_PLAYLISTS, playlistsJson).apply();
         Log.d("PlaylistSave", "Saved playlists: " + playlistsJson);
     }
@@ -942,17 +1393,82 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
     private void loadPlaylists() {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         String playlistsJson = prefs.getString(KEY_PLAYLISTS, null);
+        lastPlaylistStoreSnapshot = playlistsJson;
         playlists.clear();
-        if (playlistsJson != null) {
+        if (playlistsJson != null && !playlistsJson.trim().isEmpty()) {
             playlists.addAll(Playlist.fromJson(playlistsJson));
-        } else {
-            playlists.add(new Playlist("默认歌单", 0, R.drawable.default_playlist_cover));
-            playlists.add(new Playlist("我的收藏", 0, R.drawable.default_playlist_cover));
+        }
+
+        boolean removedLegacyFav = false;
+        for (int i = playlists.size() - 1; i >= 0; i--) {
+            Playlist p = playlists.get(i);
+            if (p != null && "我的收藏".equals(p.getName())) {
+                playlists.remove(i);
+                removedLegacyFav = true;
+            }
+        }
+        boolean removedDefault = false;
+        for (int i = playlists.size() - 1; i >= 0; i--) {
+            Playlist p = playlists.get(i);
+            if (p != null && "默认歌单".equals(p.getName())) {
+                playlists.remove(i);
+                removedDefault = true;
+            }
+        }
+        if (removedLegacyFav) {
+            savePlaylist();
+        }
+        if (removedDefault) {
             savePlaylist();
         }
         for (Playlist playlist : playlists) {
             String coverPath = MusicLoader.getFirstCoverForPlaylist(this, playlist.getName());
             playlist.setLatestCoverPath(coverPath);
+        }
+    }
+
+    private void refreshPlaylistUiIfNeeded() {
+        if (adapter == null) {
+            return;
+        }
+
+        boolean changed = false;
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        String latestSnapshot = prefs.getString(KEY_PLAYLISTS, null);
+        if (!Objects.equals(lastPlaylistStoreSnapshot, latestSnapshot)) {
+            loadPlaylists();
+            changed = true;
+        }
+
+        for (Playlist playlist : playlists) {
+            if (playlist == null) {
+                continue;
+            }
+            String latestCover = MusicLoader.getFirstCoverForPlaylist(this, playlist.getName());
+            if (!Objects.equals(playlist.getLatestCoverPath(), latestCover)) {
+                playlist.setLatestCoverPath(latestCover);
+                changed = true;
+            }
+            try {
+                int latestCount = MusicLoader.getSongCountFromPlaylist(this, playlist.getName());
+                if (playlist.getSongCount() != latestCount) {
+                    playlist.setSongCount(latestCount);
+                    changed = true;
+                }
+            } catch (IOException e) {
+                if (playlist.getSongCount() != 0) {
+                    playlist.setSongCount(0);
+                    changed = true;
+                }
+            }
+        }
+
+        Song currentSong = musicPlayer != null ? musicPlayer.getCurrentSong() : null;
+        String currentPlaylist = currentSong != null ? currentSong.getPlaylist() : null;
+        if (!Objects.equals(adapter.getCurrentPlayingPlaylist(), currentPlaylist)) {
+            adapter.setCurrentPlayingPlaylist(currentPlaylist);
+        } else if (changed) {
+            adapter.notifyDataSetChanged();
         }
     }
 
@@ -970,8 +1486,9 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
 
     @Override
     protected void onDestroy() {
-    super.onDestroy();
-    GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
-    globalManager.detachFromActivity(this);
-}
+        playlistUiAutoRefresh.stop();
+        super.onDestroy();
+        GlobalBottomPlayerManager globalManager = ((MyApp) getApplication()).getGlobalBottomPlayerManager();
+        globalManager.detachFromActivity(this);
+    }
 }
