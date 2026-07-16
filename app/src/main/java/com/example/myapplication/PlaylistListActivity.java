@@ -235,7 +235,6 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
                             java.util.HashSet<String> processedPaths = new java.util.HashSet<>();
                             for (Map<String, Object> songMap : songs) {
                                 Song s = Song.fromMap(songMap);
-                                SongDeletionUtils.deleteCoverCaches(PlaylistListActivity.this, s.getName(), s.getCoverUrl());
                                 if (shouldDeleteFiles) {
                                     String fp = s.getFilePath();
                                     if (!processedPaths.contains(fp)) {
@@ -257,6 +256,9 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
                             adapter.removeAt(index);
                         }
 
+                        SongDeletionUtils.cleanupOrphanedCoverCaches(PlaylistListActivity.this);
+                        SongDeletionUtils.cleanupOrphanedAppOwnedAudioFiles(PlaylistListActivity.this,
+                                MusicLoader.loadAllSongFilePaths(PlaylistListActivity.this));
                         savePlaylist();
                         updateAllSongCounts();
                         dialog.dismiss();
@@ -1295,6 +1297,8 @@ public class PlaylistListActivity extends AppCompatActivity implements PlaylistR
                     // 从本地 txt 中删除该歌单歌曲
                     try {
                         MusicLoader.removePlaylistEntries(this, name);
+                        SongDeletionUtils.cleanupOrphanedCoverCaches(this);
+                        SongDeletionUtils.cleanupOrphanedAppOwnedAudioFiles(this, MusicLoader.loadAllSongFilePaths(this));
                     } catch (IOException e) {
                         throw new RuntimeException(e);
                     }

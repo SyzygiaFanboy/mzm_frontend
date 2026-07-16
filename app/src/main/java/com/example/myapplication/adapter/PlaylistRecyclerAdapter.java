@@ -195,7 +195,7 @@ public class PlaylistRecyclerAdapter extends RecyclerView.Adapter<PlaylistRecycl
                 holder.ivBiliAvatar.setImageDrawable(null);
             }
         } else {
-            holder.biliInfoRow.setVisibility(View.INVISIBLE);
+            holder.biliInfoRow.setVisibility(View.GONE);
             holder.ivBiliAvatar.setImageDrawable(null);
             holder.tvBiliInfo.setText("");
         }

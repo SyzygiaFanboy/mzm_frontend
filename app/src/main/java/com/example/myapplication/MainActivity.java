@@ -360,8 +360,12 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
             try {
                 java.util.Set<String> keep = MusicLoader.loadAllSongFilePaths(MainActivity.this);
                 int deleted = SongDeletionUtils.cleanupOrphanedAppOwnedAudioFiles(MainActivity.this, keep);
+                int deletedCovers = SongDeletionUtils.cleanupOrphanedCoverCaches(MainActivity.this);
                 if (deleted > 0) {
                     Log.d(TAG, "已清理无引用下载文件: " + deleted);
+                }
+                if (deletedCovers > 0) {
+                    Log.d(TAG, "已清理无引用封面缓存: " + deletedCovers);
                 }
             } catch (Exception e) {
                 Log.e(TAG, "清理无引用下载文件失败: " + e.getMessage());
@@ -536,7 +540,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                         java.util.HashSet<String> processedPaths = new java.util.HashSet<>();
 
                         for (Song s : songsToDelete) {
-                            SongDeletionUtils.deleteCoverCaches(MainActivity.this, s.getName(), s.getCoverUrl());
                             if (shouldDeleteFiles) {
                                 String fp = s.getFilePath();
                                 if (!processedPaths.contains(fp)) {
@@ -585,6 +588,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
                         }
                         updateSongIndices();
                         updatePersistentStorage();
+                        SongDeletionUtils.cleanupOrphanedCoverCaches(MainActivity.this);
 
                         BatchModeAdapter adapter = (BatchModeAdapter) listview.getAdapter();
                         if (adapter != null) {
@@ -2504,7 +2508,6 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         }
 
         Song songToDelete = Song.fromMap(musicList.get(position));
-        SongDeletionUtils.deleteCoverCaches(this, songToDelete.getName(), songToDelete.getCoverUrl());
         if (deleteLocalFile) {
             int refs = MusicLoader.countFilePathReferences(this, songToDelete.getFilePath());
             if (refs <= 1) {
@@ -2572,6 +2575,7 @@ public class MainActivity extends AppCompatActivity implements MusicPlayer.OnSon
         // }
         updateSongIndices();
         updatePersistentStorage();
+        SongDeletionUtils.cleanupOrphanedCoverCaches(this);
         // 刷新列表适配器
         // MusicLoader.deleteMusic(this, position);
         ((BaseAdapter) listview.getAdapter()).notifyDataSetChanged();

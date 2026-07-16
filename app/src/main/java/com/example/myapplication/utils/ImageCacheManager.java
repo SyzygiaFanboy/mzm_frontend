@@ -12,85 +12,84 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
 
 public class ImageCacheManager {
     private static final String TAG = "ImageCacheManager";
     private static final String CACHE_DIR = "image_cache";
-    private static final int MAX_MEMORY_CACHE_SIZE = 20; // 内存缓存最大数量
-    
+    private static final int MAX_MEMORY_CACHE_SIZE_KB = 20 * 1024;
+    private static final long MAX_TOTAL_DISK_CACHE_SIZE_BYTES = 100L * 1024L * 1024L;
+
     private static ImageCacheManager instance;
-    private LruCache<String, Bitmap> memoryCache;
-    private File diskCacheDir;
-    
+
+    private final Context appContext;
+    private final LruCache<String, Bitmap> memoryCache;
+    private final File diskCacheDir;
+
     private ImageCacheManager(Context context) {
-        // 初始化内存缓存
-        memoryCache = new LruCache<String, Bitmap>(MAX_MEMORY_CACHE_SIZE) {
+        appContext = context.getApplicationContext();
+        memoryCache = new LruCache<String, Bitmap>(MAX_MEMORY_CACHE_SIZE_KB) {
             @Override
             protected int sizeOf(String key, Bitmap bitmap) {
-                return 1; // 每个bitmap计为1个单位
+                if (bitmap == null) {
+                    return 0;
+                }
+                return Math.max(1, bitmap.getByteCount() / 1024);
             }
         };
-        
-        // 初始化磁盘缓存目录
-        diskCacheDir = new File(context.getExternalFilesDir(null), CACHE_DIR);
-        if (!diskCacheDir.exists()) {
-            diskCacheDir.mkdirs();
+
+        File externalDir = appContext.getExternalFilesDir(null);
+        if (externalDir == null) {
+            externalDir = appContext.getCacheDir();
         }
+        diskCacheDir = new File(externalDir, CACHE_DIR);
+        if (!diskCacheDir.exists() && !diskCacheDir.mkdirs()) {
+            Log.w(TAG, "Failed to create cache dir: " + diskCacheDir.getAbsolutePath());
+        }
+        trimDiskCacheIfNeeded();
     }
-    
+
     public static synchronized ImageCacheManager getInstance(Context context) {
         if (instance == null) {
-            instance = new ImageCacheManager(context.getApplicationContext());
+            instance = new ImageCacheManager(context);
         }
         return instance;
     }
-    
-    /**
-     * 从缓存获取图片
-     */
+
     public Bitmap getBitmap(String url) {
         if (url == null || url.isEmpty()) {
             return null;
         }
-        
+
         String key = generateKey(url);
-        
-        // 先从内存缓存获取
         Bitmap bitmap = memoryCache.get(key);
         if (bitmap != null) {
-            Log.d(TAG, "从内存缓存获取图片: " + url);
+            Log.d(TAG, "Hit memory cache: " + url);
             return bitmap;
         }
-        
-        // 再从磁盘缓存获取
+
         bitmap = getBitmapFromDisk(key);
         if (bitmap != null) {
-            Log.d(TAG, "从磁盘缓存获取图片: " + url);
-            // 加入内存缓存
+            Log.d(TAG, "Hit disk cache: " + url);
             memoryCache.put(key, bitmap);
             return bitmap;
         }
-        
+
         return null;
     }
-    
-    /**
-     * 保存图片到缓存
-     */
+
     public void putBitmap(String url, Bitmap bitmap) {
         if (url == null || url.isEmpty() || bitmap == null) {
             return;
         }
-        
+
         String key = generateKey(url);
-        
-        // 保存到内存缓存
         memoryCache.put(key, bitmap);
-        
-        // 保存到磁盘缓存
         saveBitmapToDisk(key, bitmap);
-        
-        Log.d(TAG, "图片已缓存: " + url);
+        Log.d(TAG, "Cached image: " + url);
     }
 
     public void remove(String url) {
@@ -102,42 +101,96 @@ public class ImageCacheManager {
         memoryCache.remove(key);
 
         File cacheFile = new File(diskCacheDir, key + ".jpg");
-        if (cacheFile.exists()) {
-            cacheFile.delete();
+        if (cacheFile.exists() && !cacheFile.delete()) {
+            Log.w(TAG, "Failed to delete cache file: " + cacheFile.getAbsolutePath());
         }
     }
-    
-    /**
-     * 从磁盘缓存获取图片
-     */
-    private Bitmap getBitmapFromDisk(String key) {
-        File cacheFile = new File(diskCacheDir, key + ".jpg");
-        if (cacheFile.exists()) {
-            try (FileInputStream fis = new FileInputStream(cacheFile)) {
-                return BitmapFactory.decodeStream(fis);
-            } catch (IOException e) {
-                Log.e(TAG, "从磁盘读取缓存图片失败", e);
+
+    public File getDiskCacheDir() {
+        return diskCacheDir;
+    }
+
+    public void trimDiskCacheIfNeeded() {
+        List<File> cacheFiles = listManagedDiskCacheFiles();
+        if (cacheFiles.isEmpty()) {
+            return;
+        }
+
+        long totalBytes = 0L;
+        for (File file : cacheFiles) {
+            totalBytes += file.length();
+        }
+        if (totalBytes <= MAX_TOTAL_DISK_CACHE_SIZE_BYTES) {
+            return;
+        }
+
+        cacheFiles.sort(Comparator.comparingLong(File::lastModified));
+        for (File file : cacheFiles) {
+            long fileSize = file.length();
+            if (file.delete()) {
+                totalBytes -= fileSize;
+            }
+            if (totalBytes <= MAX_TOTAL_DISK_CACHE_SIZE_BYTES) {
+                break;
             }
         }
-        return null;
     }
-    
-    /**
-     * 保存图片到磁盘缓存
-     */
+
+    private Bitmap getBitmapFromDisk(String key) {
+        File cacheFile = new File(diskCacheDir, key + ".jpg");
+        if (!cacheFile.exists()) {
+            return null;
+        }
+        try (FileInputStream fis = new FileInputStream(cacheFile)) {
+            return BitmapFactory.decodeStream(fis);
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to read cached bitmap", e);
+            return null;
+        }
+    }
+
     private void saveBitmapToDisk(String key, Bitmap bitmap) {
         File cacheFile = new File(diskCacheDir, key + ".jpg");
         try (FileOutputStream fos = new FileOutputStream(cacheFile)) {
             bitmap.compress(Bitmap.CompressFormat.JPEG, 85, fos);
             fos.flush();
+            trimDiskCacheIfNeeded();
         } catch (IOException e) {
-            Log.e(TAG, "保存图片到磁盘缓存失败", e);
+            Log.e(TAG, "Failed to save cached bitmap", e);
         }
     }
-    
-    /**
-     * 生成缓存key
-     */
+
+    private List<File> listManagedDiskCacheFiles() {
+        List<File> files = new ArrayList<>();
+
+        if (diskCacheDir.exists()) {
+            File[] diskFiles = diskCacheDir.listFiles();
+            if (diskFiles != null) {
+                for (File file : diskFiles) {
+                    if (file != null && file.isFile()) {
+                        files.add(file);
+                    }
+                }
+            }
+        }
+
+        File filesDir = appContext.getFilesDir();
+        File[] legacyFiles = filesDir != null ? filesDir.listFiles() : null;
+        if (legacyFiles != null) {
+            for (File file : legacyFiles) {
+                if (file == null || !file.isFile()) {
+                    continue;
+                }
+                String name = file.getName().toLowerCase(Locale.ROOT);
+                if (name.startsWith("cover_") && name.endsWith(".jpg")) {
+                    files.add(file);
+                }
+            }
+        }
+
+        return files;
+    }
+
     public String generateKey(String url) {
         try {
             MessageDigest md = MessageDigest.getInstance("MD5");
@@ -148,44 +201,31 @@ public class ImageCacheManager {
             }
             return sb.toString();
         } catch (NoSuchAlgorithmException e) {
-            // 如果MD5不可用，使用hashCode
             return String.valueOf(url.hashCode());
         }
     }
-    
-    /**
-     * 清理缓存
-     */
+
     public void clearCache() {
         memoryCache.evictAll();
-        
-        // 清理磁盘缓存
-        if (diskCacheDir.exists()) {
-            File[] files = diskCacheDir.listFiles();
-            if (files != null) {
-                for (File file : files) {
-                    file.delete();
-                }
+        for (File file : listManagedDiskCacheFiles()) {
+            if (file.exists() && !file.delete()) {
+                Log.w(TAG, "Failed to delete cache file: " + file.getAbsolutePath());
             }
         }
-        
-        Log.d(TAG, "缓存已清理");
+        Log.d(TAG, "Cache cleared");
     }
-    
-    /**
-     * 获取缓存大小信息
-     */
+
     public String getCacheInfo() {
-        int memorySize = memoryCache.size();
-        int diskSize = 0;
-        
-        if (diskCacheDir.exists()) {
-            File[] files = diskCacheDir.listFiles();
-            if (files != null) {
-                diskSize = files.length;
-            }
+        int memorySizeKb = memoryCache.size();
+        int diskCount = 0;
+        long diskBytes = 0L;
+
+        for (File file : listManagedDiskCacheFiles()) {
+            diskCount++;
+            diskBytes += file.length();
         }
-        
-        return String.format("内存缓存: %d张, 磁盘缓存: %d张", memorySize, diskSize);
+
+        return String.format(Locale.US, "内存缓存: %.2fMB/20MB, 磁盘缓存: %d项, %.2fMB/100MB",
+                memorySizeKb / 1024f, diskCount, diskBytes / 1024f / 1024f);
     }
 }
